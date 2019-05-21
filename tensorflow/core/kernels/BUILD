@@ -6,6 +6,7 @@ load(
     "if_cuda_or_rocm",
     "if_mobile",
     "if_not_windows",
+    "if_linux_x86_64",
     "tf_cc_binary",
     "tf_cc_shared_object",
     "tf_cc_test",
@@ -984,6 +985,12 @@ tf_cc_test(
     ],
 )
 
+cc_library(
+    name = "crop_resize_bilinear_core",
+    hdrs = ["crop_resize_bilinear_core.h"],
+    visibility = ["//visibility:private"],
+)
+
 # OpKernel libraries ----------------------------------------------------------
 
 ARRAY_DEPS = [
@@ -1602,6 +1609,7 @@ tf_kernel_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bounds_check_lib",
+        ":ops_util",
         ":gpu_utils",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
@@ -3081,8 +3089,10 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "crop_and_resize_op",
+    copts = tf_copts() + if_linux_x86_64(["-finline-functions"]),
     prefix = "crop_and_resize_op",
-    deps = IMAGE_DEPS + ["//tensorflow/core:framework_internal"],
+    deps = IMAGE_DEPS + ["//tensorflow/core:framework_internal",
+                         ":crop_resize_bilinear_core"],
 )
 
 tf_kernel_library(
@@ -3161,8 +3171,9 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "resize_bilinear_op",
+    copts = tf_copts() + if_linux_x86_64(["-finline-functions"]),
     prefix = "resize_bilinear_op",
-    deps = IMAGE_DEPS,
+    deps = IMAGE_DEPS + [":crop_resize_bilinear_core"],
 )
 
 tf_kernel_library(
@@ -6694,6 +6705,7 @@ filegroup(
         "conv_ops.h",
         "conv_ops_3d.h",
         "conv_ops_gpu.h",
+        "crop_resize_bilinear_core.h",
         "data_format_ops.h",
         "depthtospace_op.h",
         "depthwise_conv_op.h",
