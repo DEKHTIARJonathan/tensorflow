@@ -190,6 +190,13 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
     ],
+    # ArgMax needs CustomCall on CPU, which is not available in normal
+    # (not precompiled) TensorFlow. The flag below excludes the CPU
+    # backend.
+    disabled_backends = [
+        "cpu",
+        "cpu_ondemand",
+    ],
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -1371,13 +1378,14 @@ tf_xla_py_test(
 
 tf_xla_py_test(
     name = "unary_ops_test",
-    size = "medium",
+    size = "large",
     srcs = ["unary_ops_test.py"],
     enable_mlir_bridge = True,
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
     ],
+    shard_count = 3,
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -1415,7 +1423,7 @@ tf_xla_py_test(
 
 tf_xla_py_test(
     name = "variable_ops_test",
-    size = "small",
+    size = "medium",
     srcs = ["variable_ops_test.py"],
     python_version = "PY3",
     tags = [
