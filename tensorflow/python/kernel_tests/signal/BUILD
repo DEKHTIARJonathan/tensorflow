@@ -36,7 +36,7 @@ cuda_py_tests(
 
 cuda_py_tests(
     name = "fft_ops_test",
-    size = "medium",
+    size = "large",
     srcs = ["fft_ops_test.py"],
     python_version = "PY3",
     shard_count = 8,
