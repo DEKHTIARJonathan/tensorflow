@@ -146,7 +146,8 @@ cuda_py_test(
     name = "benchmark_test",
     size = "small",
     srcs = ["benchmark_test.py"],
-    tags = ["no_windows"],
+    # TODO(mconley): remove 'no_arm' tag once ignored test lists are merged in
+    tags = ["no_windows","no_arm",],
     deps = [
         "//tensorflow/python:client",
         "//tensorflow/python:client_testlib",
@@ -154,6 +155,7 @@ cuda_py_test(
         "//tensorflow/python:platform",
         "//tensorflow/python:platform_benchmark",
     ],
+    xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(
@@ -1763,6 +1765,7 @@ cuda_py_test(
     shard_count = 16,
     tags = [
         "notsan",  # TODO(b/132205147): Re-enable this.
+        "no_arm",  # TODO(mconley): remove once ignored test lists are merged in
     ],
     deps = [
         "//tensorflow/core:protos_all_py",
@@ -1905,6 +1908,9 @@ cuda_py_test(
         "//tensorflow/python:platform",
         "//third_party/py/numpy",
     ],
+    xla_enable_strict_auto_jit = True,
+    # TODO(mconley): remove 'no_arm' tag once ignored test lists are merged in
+    tags = ["no_arm"],
 )
 
 cuda_py_test(
@@ -2915,9 +2921,9 @@ cuda_py_test(
 
 cuda_py_test(
     name = "conv_ops_test",
-    size = "medium",
+    size = "large",
     srcs = ["conv_ops_test.py"],
-    shard_count = 4,
+    shard_count = 8,
     tags = [
         "nogpu",  # TODO(b/153763253); flaky
         "optonly",  # times out
@@ -3127,13 +3133,15 @@ cuda_py_test(
     name = "sparse_matmul_op_test",
     size = "medium",
     srcs = ["sparse_matmul_op_test.py"],
-    tags = ["no_windows"],
+    # TODO(mconley): remove 'no_arm' tag once ignored test lists are merged in
+    tags = ["no_windows","no_arm",],
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:math_ops",
         "//third_party/py/numpy",
     ],
+    xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(

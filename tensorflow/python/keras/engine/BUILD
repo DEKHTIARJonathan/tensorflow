@@ -433,7 +433,7 @@ tf_py_test(
 
 tf_py_test(
     name = "training_generator_test",
-    size = "medium",
+    size = "enormous",
     srcs = ["training_generator_test.py"],
     python_version = "PY3",
     shard_count = 6,
