@@ -586,6 +586,7 @@ cc_library(
         "//tensorflow/core/profiler/lib:scoped_annotation",
         "//tensorflow/core/profiler/lib:traceme_encode",
         "@com_google_absl//absl/memory",
+        "@nvtx_archive//:nvtx",
     ],
     alwayslink = 1,
 )
@@ -1591,6 +1592,7 @@ tf_cuda_library(
         ":step_stats_collector",
         ":threadpool_device",
         ":threadpool_device_factory",
+        "@nvtx_archive//:nvtx",
     ],
 )
 
