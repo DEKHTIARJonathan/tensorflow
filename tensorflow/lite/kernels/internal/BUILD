@@ -22,11 +22,11 @@ HARD_FP_FLAGS_IF_APPLICABLE = select({
 })
 
 NEON_FLAGS_IF_APPLICABLE = select({
-    ":arm": [
+    "//tensorflow:android_arm": [
         "-O3",
         "-mfpu=neon",
     ],
-    ":armeabi-v7a": [
+    "//tensorflow:android_armeabi": [
         "-O3",
         "-mfpu=neon",
     ],
@@ -35,6 +35,10 @@ NEON_FLAGS_IF_APPLICABLE = select({
         "-mfpu=neon",
     ],
     ":armv7a": [
+        "-O3",
+        "-mfpu=neon",
+    ],
+    "//tensorflow:android_arm64": [
         "-O3",
         "-mfpu=neon",
     ],
