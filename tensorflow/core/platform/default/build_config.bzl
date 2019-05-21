@@ -30,6 +30,12 @@ def well_known_proto_libs():
         "@com_google_protobuf//:wrappers_proto",
     ]
 
+# configure may change the following lines
+WITH_GCP_SUPPORT = False
+WITH_HDFS_SUPPORT = False
+WITH_XLA_SUPPORT = False
+WITH_JEMALLOC = False
+
 # Appends a suffix to a list of deps.
 def tf_deps(deps, suffix):
     tf_deps = []
