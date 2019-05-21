@@ -20,12 +20,17 @@ limitations under the License.
 #include <vector>
 
 #include "absl/memory/memory.h"
+#if GOOGLE_CUDA
+#include "tensorflow/core/platform/nvtx.h"
+#endif // GOOGLE_CUDA
+
 #include "tensorflow/core/common_runtime/costmodel_manager.h"
 #include "tensorflow/core/common_runtime/entry.h"
 #include "tensorflow/core/common_runtime/executor_factory.h"
 #include "tensorflow/core/common_runtime/graph_view.h"
 #include "tensorflow/core/common_runtime/immutable_executor_state.h"
 #include "tensorflow/core/common_runtime/pending_counts.h"
+#include "tensorflow/core/common_runtime/propagator_debug_utils.h"
 #include "tensorflow/core/common_runtime/propagator_state.h"
 #include "tensorflow/core/common_runtime/renamed_device.h"
 #include "tensorflow/core/common_runtime/simple_propagator_state.h"
@@ -70,6 +75,7 @@ limitations under the License.
 #include "tensorflow/core/profiler/lib/traceme_encode.h"
 #include "tensorflow/core/protobuf/error_codes.pb.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace {
@@ -289,10 +295,19 @@ class ExecutorState {
   void Process(TaggedNode node, int64 scheduled_nsec);
 
   Status ProcessSync(const NodeItem& item, OpKernelContext::Params* params,
+#if GOOGLE_CUDA
+                     EntryVector* outputs, NodeExecStatsInterface* stats,
+                     nvtxRangeId_t nvtx_range);
+#else
                      EntryVector* outputs, NodeExecStatsInterface* stats);
+#endif
   void ProcessAsync(const NodeItem& item, const OpKernelContext::Params& params,
                     const TaggedNode& tagged_node, Entry* first_input,
+#if GOOGLE_CUDA
+                    NodeExecStatsInterface* stats, nvtxRangeId_t nvtx_range);
+#else
                     NodeExecStatsInterface* stats);
+#endif
   void ProcessNoop(NodeExecStatsInterface* stats);
   void ProcessConstTensor(const NodeItem& item, EntryVector* outputs,
                           NodeExecStatsInterface* stats);
@@ -517,7 +532,11 @@ bool MightTrace(const tracing::EventCollector* event_collector,
 template <class PropagatorStateType>
 Status ExecutorState<PropagatorStateType>::ProcessSync(
     const NodeItem& item, OpKernelContext::Params* params, EntryVector* outputs,
+#if GOOGLE_CUDA
+    NodeExecStatsInterface* stats, nvtxRangeId_t nvtx_range) {
+#else
     NodeExecStatsInterface* stats) {
+#endif
   Status s;
   OpKernelContext ctx(params, item.num_outputs);
   nodestats::SetOpStart(stats);
@@ -557,13 +576,21 @@ template <class PropagatorStateType>
 void ExecutorState<PropagatorStateType>::ProcessAsync(
     const NodeItem& item, const OpKernelContext::Params& params,
     const TaggedNode& tagged_node, Entry* first_input,
+#if GOOGLE_CUDA
+    NodeExecStatsInterface* stats, nvtxRangeId_t nvtx_range) {
+#else
     NodeExecStatsInterface* stats) {
+#endif
   AsyncOpKernel* async_kernel = item.kernel->AsAsync();
   DCHECK(async_kernel != nullptr);
   AsyncState* state =
       new AsyncState(params, tagged_node, &item, first_input, stats);
 
+#if GOOGLE_CUDA
+  auto done = [this, state, nvtx_range]() {
+#else
   auto done = [this, state]() {
+#endif // GOOGLE_CUDA
     Device* device = immutable_state_.params().device;
     NodeExecStatsInterface* stats = state->stats;  // Shorthand
     Entry* first_input = state->first_input;       // Shorthand
@@ -591,6 +618,9 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
     }
     outputs.clear();
     const bool completed = NodeDone(s, &ready, stats, nullptr);
+#if GOOGLE_CUDA
+    nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
+#endif // GOOGLE_CUDA
     delete state;
     if (completed) ScheduleFinish();
   };
@@ -734,6 +764,49 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
 
     Entry* first_input = propagator_.GetInputTensors(tagged_node);
 
+#if GOOGLE_CUDA
+    string msg;
+    if (nvtx::NvtxRangesEnabled() || nvtx::NvtxRangesDetailedEnabled()) {
+      if (nvtx::NvtxRangesDetailedEnabled()) {
+        std::vector<string> args_pieces;
+        for (int i = 0; i < item.num_inputs; ++i) {
+          if (i == 10) {
+            // Truncate long arg lists and indicate with an ending null value.
+            args_pieces.push_back("null");
+            break;
+          }
+          const auto& shape = GetTensorValueForDump(first_input[i])->shape();
+          string shape_str =
+              shape.unknown_rank() ? "null" : shape.DebugString();
+          args_pieces.push_back(
+              strings::StrCat("{\"name\":\"", item.kernel->def().input(i),
+                              "\",\"shape\":", shape_str, "}"));
+        }
+        std::vector<string> attrs_pieces;
+        const auto& attrs = item.kernel->def().attr();
+        for (auto it = attrs.begin(); it != attrs.end(); ++it) {
+          const string& key = it->first;
+          const AttrValue& value = it->second;
+          // Exclude types that aren't useful for profiling.
+          if (value.value_case() == AttrValue::kFunc ||
+              value.value_case() == AttrValue::kPlaceholder ||
+              value.value_case() == AttrValue::VALUE_NOT_SET) {
+            continue;
+          }
+          string value_str = nvtx::AttrValueToJson(value);
+          attrs_pieces.push_back(strings::StrCat("\"", key, "\":", value_str));
+        }
+        msg = strings::StrCat("{\"op\":\"", item.kernel->def().op(), "\",\"name\":\"",
+                              item.kernel->name(), "\",\"args\":[",
+                              str_util::Join(args_pieces, ","), "],\"attrs\":{",
+                              str_util::Join(attrs_pieces, ","), "}}");
+      } else {
+        msg = item.kernel->def().op() + ": " + item.kernel->name();
+      }
+    }
+    auto nvtx_range = nvtx::MaybeNvtxDomainRangeStartMsg(msg, item.kernel->def().op());
+#endif // GOOGLE_CUDA
+
     // Only execute this node if it is not dead or it is a send/recv
     // transfer node. For transfer nodes, we need to propagate the "dead"
     // bit even when the node is dead.
@@ -758,6 +831,9 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
         propagator_.MaybeMarkCompleted(tagged_node);
         // Continue to process the nodes in 'inline_ready'.
         completed = NodeDone(s, &ready, stats, &inline_ready);
+#if GOOGLE_CUDA
+        nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
+#endif // GOOGLE_CUDA
         continue;
       }
 
@@ -770,10 +846,18 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       params.outputs_required_array = item.outputs_required.get();
 
       if (item.kernel_is_async) {
+#if GOOGLE_CUDA
+        ProcessAsync(item, params, tagged_node, first_input, stats, nvtx_range);
+#else
         ProcessAsync(item, params, tagged_node, first_input, stats);
+#endif
         launched_asynchronously = true;
       } else {
+#if GOOGLE_CUDA
+        s = ProcessSync(item, &params, &outputs, stats, nvtx_range);
+#else
         s = ProcessSync(item, &params, &outputs, stats);
+#endif
       }
     }
 
@@ -807,6 +891,9 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       }
       // Postprocess.
       completed = NodeDone(s, &ready, stats, &inline_ready);
+#if GOOGLE_CUDA
+      nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
+#endif // GOOGLE_CUDA
     }
   }  // while !inline_ready.empty()
 

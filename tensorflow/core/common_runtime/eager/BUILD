@@ -315,6 +315,7 @@ tf_cuda_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/types:optional",
         "@farmhash_archive//:farmhash",
+        "@nvtx_archive//:nvtx",
     ] + select({
         "//tensorflow:android": [
             "//tensorflow/core:portable_tensorflow_lib_lite",
