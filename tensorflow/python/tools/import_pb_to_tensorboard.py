@@ -37,6 +37,12 @@ try:
   from tensorflow.contrib.tensorrt.ops.gen_trt_engine_op import *
 except ImportError:
   pass
+
+# Try importing Horovod ops if available
+try:
+  import horovod.tensorflow
+except ImportError:
+  pass
 # pylint: enable=unused-import,g-import-not-at-top,wildcard-import
 
 
@@ -58,7 +64,7 @@ def import_to_tensorboard(model_dir, log_dir, tag_set):
   with session.Session(graph=ops.Graph()) as sess:
     input_graph_def = saved_model_utils.get_meta_graph_def(model_dir,
                                                            tag_set).graph_def
-    importer.import_graph_def(input_graph_def)
+    importer.import_graph_def(input_graph_def, name='')
 
     pb_visual_writer = summary.FileWriter(log_dir)
     pb_visual_writer.add_graph(sess.graph)
