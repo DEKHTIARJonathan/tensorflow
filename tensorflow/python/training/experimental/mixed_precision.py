@@ -18,7 +18,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import contextlib
+
+from tensorflow.core.framework import attr_value_pb2
 from tensorflow.python.framework import config
+from tensorflow.python.framework import ops
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.training import optimizer
 from tensorflow.python.training.experimental import loss_scale_optimizer as loss_scale_optimizer_v1
@@ -36,6 +40,43 @@ _REGISTERED_WRAPPER_OPTIMIZER_CLS = {
 
 def _register_wrapper_optimizer_cls(optimizer_cls, wrapper_optimizer_cls):
   _REGISTERED_WRAPPER_OPTIMIZER_CLS[optimizer_cls] = wrapper_optimizer_cls
+
+
+@tf_export(v1=['train.experimental.auto_mixed_precision_scope'])
+@contextlib.contextmanager
+def auto_mixed_precision_scope(select=True):
+  """Allow/Disallow the rewriting of specific sections of the graph.
+
+  This function uses a context manager to apply attributes to any node
+  created within the yielded scope which will be interpreted by the graph
+  rewrite pass.
+
+  A 'True' value for select does not guarantee that the scope will be converted
+  to fp16, it only ensures that the graph rewrite optimization pass will
+  consider the scope as usual.  This is the default behavior for every node in
+  the graph when the mixed precision graph rewrite is enabled.
+
+  A 'False' value for select means that the graph rewrite optimization pass
+  will ignore the scope, which guarantees the nodes within will remain
+  unconverted. This may result in other nodes outside of the scope not being
+  converted to fp16 which otherwise would have been, depending on the graph's
+  structure.
+
+  Args:
+    select: A boolean whose value determines whether to allow the graph rewrite
+      pass to process the current scope.
+
+  Yields:
+    The current scope, allowing or disallowing graph rewrite processing.
+
+  """
+
+  scope_include = attr_value_pb2.AttrValue(b=select)
+  attrs = {"_AutoMixedPrecisionScopeInclude": scope_include}
+  # pylint: disable=protected-access
+  with ops.get_default_graph()._attr_scope(attrs):
+    yield
+  # pylint: enable=protected-access
 
 
 def _wrap_optimizer(opt, loss_scale, use_v1_behavior):
