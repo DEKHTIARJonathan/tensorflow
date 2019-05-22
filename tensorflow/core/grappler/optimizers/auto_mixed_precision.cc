@@ -959,6 +959,7 @@ class AutoMixedPrecisionImpl {
   void LogSkippedNode(const NodeDef& node) const;
   bool MustPreserve(const NodeDef& node) const;
   bool IsOnDevice(const NodeDef& node, const string& device_type) const;
+  bool IsScopeDisabled(const NodeDef& node) const;
   bool IsOnSuitableGPUArch(const NodeDef& node) const;
   bool ShouldProcess(const NodeDef& node) const;
   bool NodeHasF16KernelForTypeAttr(const NodeDef& node, TypeAttrId taid) const;
@@ -1131,6 +1132,14 @@ bool AutoMixedPrecisionImpl::IsOnDevice(const NodeDef& node,
   return false;
 }
 
+// Returns whether the node has been disabled via auto_mixed_precision_scope.
+bool AutoMixedPrecisionImpl::IsScopeDisabled(const NodeDef& node) const {
+  if (node.attr().count("_AutoMixedPrecisionScopeInclude")) {
+    return !node.attr().at("_AutoMixedPrecisionScopeInclude").b();
+  }
+  return false;
+}
+
 // Returns the GPU architecture (compute capability) as a (major, minor) pair.
 std::pair<int, int> GetDeviceGPUArch(
     const DeviceProperties& device_properties) {
@@ -1270,7 +1279,7 @@ Status AutoMixedPrecisionImpl::Optimize() {
     switch (mode_) {
       case AutoMixedPrecisionMode::CUDA:
         should_process =
-            !MustPreserve(node) && IsOnDevice(node, DEVICE_GPU) &&
+            !MustPreserve(node) && IsOnDevice(node, DEVICE_GPU) && !IsScopeDisabled(node) &&
             (ShouldIgnorePerformance() || IsOnSuitableGPUArch(node));
         break;
       case AutoMixedPrecisionMode::MKL:
