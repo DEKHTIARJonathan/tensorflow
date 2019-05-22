@@ -7924,6 +7924,7 @@ cuda_py_test(
         ":dtypes",
         ":framework_for_generated_wrappers",
         ":math_ops",
+        ":mixed_precision",
         ":nn",
         ":ops",
         ":random_ops",
@@ -7932,6 +7933,7 @@ cuda_py_test(
         "//third_party/py/numpy",
     ],
 )
+
 
 tf_gen_op_wrapper_private_py(
     name = "nccl_ops_gen",
