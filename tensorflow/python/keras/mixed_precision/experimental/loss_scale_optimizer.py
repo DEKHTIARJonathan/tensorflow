@@ -99,7 +99,7 @@ class LossScaleOptimizer(optimizer_v2.OptimizerV2):
   ```
   """
 
-  def __init__(self, opt, loss_scale):
+  def __init__(self, opt, loss_scale, name="loss_scale_optimizer", **kwargs):
     """Initializes this loss scale optimizer.
 
     Args:
@@ -110,7 +110,11 @@ class LossScaleOptimizer(optimizer_v2.OptimizerV2):
         "dynamic" equivalent to passing `DynamicLossScale()`, and passing an
         int/float is equivalent to passing a FixedLossScale with the given loss
         scale.
+      name: Optional name for the operations created when applying gradients.
+        Defaults to "loss_scale_optimizer".
     """
+    super(LossScaleOptimizer, self).__init__(name=name, **kwargs)
+
     if not isinstance(opt, optimizer_v2.OptimizerV2):
       raise ValueError('"opt" must be an instance of OptimizerV2, but got: %s'
                        % opt)
