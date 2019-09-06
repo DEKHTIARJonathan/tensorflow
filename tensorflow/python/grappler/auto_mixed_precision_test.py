@@ -771,9 +771,6 @@ class AutoMixedPrecisionTest(test.TestCase):
                                  'gradients/Conv2D_grad/Conv2DBackpropInput')
         self._assert_output_fp16(node_map,
                                  'gradients/Conv2D_1_grad/Conv2DBackpropInput')
-        #TODO(mconley): Currently working on a more robust way to count inserted
-        # casts. For now, subtract one from num_to_fp16 because of misnamed node
-        num_to_fp16 -= 1
         self.assertEqual(num_to_fp16, 2)  # Before Conv2D_1:0, Conv2D_1:1
         self.assertEqual(num_to_fp32, 2)  # After Conv2D_1 and Conv2D_1_grad
         self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
