@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/platform/nvtx.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/stream_executor/blas.h"
 #include "tensorflow/stream_executor/device_memory.h"
@@ -262,6 +263,9 @@ Status RunGemm(const HloInstruction *gemm, se::DeviceMemoryBase lhs_buffer,
   complex128 alpha = {backend_config.alpha_real(), backend_config.alpha_imag()};
   double beta = backend_config.beta();
 
+  auto nvtx_range = tensorflow::nvtx::MaybeNvtxRangeStart(
+      gemm->NvtxNodeOpString(), gemm->NvtxNodeNameString());
+
   bool launch_ok = [&]() {
     switch (output_shape.element_type()) {
       case F16:
@@ -296,6 +300,8 @@ Status RunGemm(const HloInstruction *gemm, se::DeviceMemoryBase lhs_buffer,
         LOG(FATAL) << "Unsupported type.";
     }
   }();
+
+  tensorflow::nvtx::MaybeNvtxRangeEnd(nvtx_range);
 
   if (!launch_ok) {
     return InternalError("Unable to launch cuBLAS gemm on stream %p", stream);

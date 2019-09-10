@@ -45,6 +45,10 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/meta_optimizer.h"
 #endif  // !IS_MOBILE_PLATFORM
 
+#if GOOGLE_CUDA
+#include "tensorflow/core/platform/nvtx.h"
+#endif // GOOGLE_CUDA
+
 namespace tensorflow {
 
 std::function<void(std::function<void()>)>* KernelAndDevice::get_runner()
@@ -302,6 +306,11 @@ Status KernelAndDeviceOp::Run(ScopedStepContainer* step_container,
 
   OpKernelContext context(&params);
 
+#if GOOGLE_CUDA
+  auto nvtx_range = nvtx::MaybeNvtxRangeStart(kernel_->def().op(),
+                                              kernel_->name());
+#endif // GOOGLE_CUDA
+
   if (kernel_->def().op() == "_Recv") {
     // TODO(apassos) do not special-case _Recv. Currently the GPU device fails
     // if trying to run _Recv->Compute(), specifically checking for _Recv. To go
@@ -342,6 +351,11 @@ Status KernelAndDeviceOp::Run(ScopedStepContainer* step_container,
   if (stats != nullptr) {
     UpdateStats(&context, step_stats_collector.get(), stats);
   }
+
+#if GOOGLE_CUDA
+  nvtx::MaybeNvtxRangeEnd(nvtx_range);
+#endif // GOOGLE_CUDA
+
   return Status::OK();
 }
 
