@@ -248,16 +248,29 @@ static Status ValidateArg(const OpDef::ArgDef& arg, const OpDef& op_def,
   return Status::OK();
 }
 
-Status ValidateOpDef(const OpDef& op_def) {
+bool IsValidOpName(StringPiece sp) {
   using ::tensorflow::strings::Scanner;
 
-  if (!str_util::StartsWith(op_def.name(), "_")) {
-    VALIDATE(Scanner(op_def.name())
-                 .One(Scanner::UPPERLETTER)
-                 .Any(Scanner::LETTER_DIGIT)
-                 .Eos()
-                 .GetResult(),
-             "Invalid name: ", op_def.name(), " (Did you use CamelCase?)");
+  Scanner scanner(sp);
+  scanner.One(Scanner::UPPERLETTER).Any(Scanner::LETTER_DIGIT_UNDERSCORE);
+
+  while (true) {
+    if (!scanner.GetResult())  // Some error in previous iteration.
+      return false;
+    if (scanner.empty())  // No error, but nothing left, good.
+      return true;
+
+    // Absorb another name/namespace, starting with a '>'
+    scanner.One(Scanner::RANGLE)
+        .One(Scanner::UPPERLETTER)
+        .Any(Scanner::LETTER_DIGIT_UNDERSCORE);
+  }
+}
+
+Status ValidateOpDef(const OpDef& op_def) {
+  if (!absl::StartsWith(op_def.name(), "_")) {
+    VALIDATE(IsValidOpName(op_def.name()), "Invalid name: ", op_def.name(),
+             " (Did you use CamelCase?)");
   }
 
   std::set<string> names;  // for detecting duplicate names
@@ -271,11 +284,11 @@ Status ValidateOpDef(const OpDef& op_def) {
 
     // Validate type
     StringPiece type(attr.type());
-    bool is_list = str_util::ConsumePrefix(&type, "list(");
+    bool is_list = absl::ConsumePrefix(&type, "list(");
     bool found = false;
     for (StringPiece valid : {"string", "int", "float", "bool", "type", "shape",
                               "tensor", "func"}) {
-      if (str_util::ConsumePrefix(&type, valid)) {
+      if (absl::ConsumePrefix(&type, valid)) {
         found = true;
         break;
       }
@@ -283,7 +296,7 @@ Status ValidateOpDef(const OpDef& op_def) {
     VALIDATE(found, "Unrecognized type '", type, "' in attr '", attr.name(),
              "'");
     if (is_list) {
-      VALIDATE(str_util::ConsumePrefix(&type, ")"),
+      VALIDATE(absl::ConsumePrefix(&type, ")"),
                "'list(' is missing ')' in attr ", attr.name(), "'s type ",
                attr.type());
     }

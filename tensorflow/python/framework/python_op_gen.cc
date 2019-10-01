@@ -15,8 +15,11 @@ limitations under the License.
 #include "tensorflow/python/framework/python_op_gen.h"
 
 #include <stdio.h>
+
 #include <sstream>
 #include <unordered_map>
+
+#include "absl/strings/escaping.h"
 #include "tensorflow/core/framework/api_def.pb.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/op.h"
@@ -108,7 +111,7 @@ class GenEagerPythonOp : public python_op_gen_internal::GenPythonOp {
                    const string& function_name)
       : python_op_gen_internal::GenPythonOp(op_def, api_def, function_name) {
     op_name_ = function_name_;
-    str_util::ConsumePrefix(&op_name_, "_");
+    absl::ConsumePrefix(&op_name_, "_");
   }
   ~GenEagerPythonOp() override {}
 
@@ -388,8 +391,13 @@ void GenEagerPythonOp::HandleGraphMode(const string& function_setup) {
       for (int i = 0; i < op_def_.attr_size(); ++i) {
         if (i > 0) strings::StrAppend(&attr_values, ", ");
         const auto& attr_name(op_def_.attr(i).name());
-        strings::StrAppend(&attr_values, "\"", attr_name, "\", _op.get_attr(\"",
-                           attr_name, "\")");
+        if (op_def_.attr(i).type() == "type") {
+          strings::StrAppend(&attr_values, "\"", attr_name,
+                             "\", _op._get_attr_type(\"", attr_name, "\")");
+        } else {
+          strings::StrAppend(&attr_values, "\"", attr_name,
+                             "\", _op.get_attr(\"", attr_name, "\")");
+        }
       }
       strings::StrAppend(&attr_values, ")");
       strings::StrAppend(
@@ -487,7 +495,7 @@ bool GenEagerPythonOp::GetEagerFunctionSetup(const string& indentation,
       strings::StrAppend(function_setup, indentation, "  ", attr_api_name,
                          " = ", default_value, "\n");
     }
-    if (str_util::StartsWith(attr_type, "list(")) {
+    if (absl::StartsWith(attr_type, "list(")) {
       ExpectListArg(indentation, attr_api_name, function_setup);
     }
 
@@ -624,8 +632,10 @@ void GenEagerPythonOp::AddEagerFunctionTeardown(
       // For list outputs, convert the right subrange of _result into a list.
       Unflatten(indentation, output_sizes, "_result", &result_);
       // Convert to a named tuple.
-      strings::StrAppend(&result_, indentation, "_result = _", op_def_.name(),
-                         "Output._make(_result)\n");
+      strings::StrAppend(
+          &result_, indentation, "_result = _",
+          python_op_gen_internal::AvoidPythonReserved(op_def_.name()),
+          "Output._make(_result)\n");
     }
   } else {
     strings::StrAppend(&result_, indentation, "_result = None\n");
@@ -752,8 +762,9 @@ void GenEagerPythonOp::AddEagerFastPathExecute() {
       "\n");
 
   if (op_def_.output_arg_size() > 1) {
-    const string output_tuple_name =
-        strings::StrCat("_", op_def_.name(), "Output");
+    const string output_tuple_name = strings::StrCat(
+        "_", python_op_gen_internal::AvoidPythonReserved(op_def_.name()),
+        "Output");
     strings::StrAppend(&result_, "      ", "_result = ", output_tuple_name,
                        "._make(_result)\n");
   }
@@ -1071,11 +1082,11 @@ from tensorflow.tools.docs import doc_controls as _doc_controls
 
   result.append("# ");
   auto ops_text = ProtoDebugString(cleaned_ops);
-  str_util::StripTrailingWhitespace(&ops_text);
+  absl::StripTrailingAsciiWhitespace(&ops_text);
   result.append(str_util::StringReplace(ops_text, "\n", "\n# ", true));
   result.append("\n");
   strings::Appendf(&result, "_op_def_lib = _InitOpDefLibrary(b\"%s\")\n",
-                   str_util::CEscape(cleaned_ops.SerializeAsString()).c_str());
+                   absl::CEscape(cleaned_ops.SerializeAsString()).c_str());
   return result;
 }
 

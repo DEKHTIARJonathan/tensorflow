@@ -38,7 +38,6 @@ import tensorflow as tf
 from google.protobuf import message
 from google.protobuf import text_format
 
-from tensorflow.python.framework import test_util
 from tensorflow.python.lib.io import file_io
 from tensorflow.python.platform import resource_loader
 from tensorflow.python.platform import test
@@ -47,6 +46,14 @@ from tensorflow.tools.api.lib import api_objects_pb2
 from tensorflow.tools.api.lib import python_object_to_proto_visitor
 from tensorflow.tools.common import public_api
 from tensorflow.tools.common import traverse
+
+# pylint: disable=g-import-not-at-top,unused-import
+_TENSORBOARD_AVAILABLE = True
+try:
+  import tensorboard as _tb
+except ImportError:
+  _TENSORBOARD_AVAILABLE = False
+# pylint: enable=g-import-not-at-top,unused-import
 
 # FLAGS defined at the bottom:
 FLAGS = None
@@ -315,7 +322,7 @@ class ApiCompatibilityTest(test.TestCase):
     visitor = python_object_to_proto_visitor.PythonObjectToProtoVisitor()
 
     public_api_visitor = public_api.PublicAPIVisitor(visitor)
-    public_api_visitor.private_map['tf'] = ['contrib']
+    public_api_visitor.private_map['tf'].append('contrib')
     if api_version == 2:
       public_api_visitor.private_map['tf'].append('enable_v2_behavior')
 
@@ -355,14 +362,14 @@ class ApiCompatibilityTest(test.TestCase):
         update_goldens=FLAGS.update_goldens,
         api_version=api_version)
 
-  @test_util.run_v1_only('b/120545219')
   def testAPIBackwardsCompatibility(self):
     api_version = 2 if '_api.v2' in tf.bitwise.__name__ else 1
     golden_file_pattern = os.path.join(
         resource_loader.get_root_dir_with_all_resources(),
         _KeyToFilePath('*', api_version))
     omit_golden_symbols_map = {}
-    if api_version == 2 and FLAGS.only_test_core_api:
+    if (api_version == 2 and FLAGS.only_test_core_api
+        and not _TENSORBOARD_AVAILABLE):
       # In TF 2.0 these summary symbols are imported from TensorBoard.
       omit_golden_symbols_map['tensorflow.summary'] = [
           'audio', 'histogram', 'image', 'scalar', 'text']
@@ -378,10 +385,12 @@ class ApiCompatibilityTest(test.TestCase):
 
     # Also check that V1 API has contrib
     self.assertTrue(
+        api_version == 2 or
         'tensorflow.python.util.lazy_loader.LazyLoader'
         in str(type(tf.contrib)))
+    # Check that V2 API does not have contrib
+    self.assertTrue(api_version == 1 or not hasattr(tf, 'contrib'))
 
-  @test_util.run_v1_only('b/120545219')
   def testAPIBackwardsCompatibilityV1(self):
     api_version = 1
     golden_file_pattern = os.path.join(
@@ -398,7 +407,7 @@ class ApiCompatibilityTest(test.TestCase):
         resource_loader.get_root_dir_with_all_resources(),
         _KeyToFilePath('*', api_version))
     omit_golden_symbols_map = {}
-    if FLAGS.only_test_core_api:
+    if FLAGS.only_test_core_api and not _TENSORBOARD_AVAILABLE:
       # In TF 2.0 these summary symbols are imported from TensorBoard.
       omit_golden_symbols_map['tensorflow.summary'] = [
           'audio', 'histogram', 'image', 'scalar', 'text']

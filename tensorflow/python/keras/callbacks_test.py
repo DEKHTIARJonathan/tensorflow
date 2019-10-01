@@ -134,7 +134,8 @@ class CallbackCountsTest(keras_parameterized.TestCase):
     model.compile(
         adam.AdamOptimizer(0.001),
         'binary_crossentropy',
-        run_eagerly=testing_utils.should_run_eagerly())
+        run_eagerly=testing_utils.should_run_eagerly(),
+        experimental_run_tf_function=testing_utils.should_run_tf_function())
     return model
 
   @parameterized.named_parameters(('with_numpy', _get_numpy()),
@@ -142,6 +143,7 @@ class CallbackCountsTest(keras_parameterized.TestCase):
   def test_callback_hooks_are_called_in_fit(self, data):
     x, y = data
     val_x, val_y = np.ones((4, 10)), np.ones((4, 1))
+    is_sequence = isinstance(x, keras.utils.data_utils.Sequence)
 
     model = self._get_model()
     counter = Counter()
@@ -149,7 +151,8 @@ class CallbackCountsTest(keras_parameterized.TestCase):
         x,
         y,
         validation_data=(val_x, val_y),
-        batch_size=2,
+        batch_size=2 if not is_sequence else None,
+        steps_per_epoch=5 if is_sequence else None,
         epochs=5,
         callbacks=[counter])
 
@@ -177,10 +180,16 @@ class CallbackCountsTest(keras_parameterized.TestCase):
                                   ('with_sequence', _get_sequence()))
   def test_callback_hooks_are_called_in_evaluate(self, data):
     x, y = data
+    is_sequence = isinstance(x, keras.utils.data_utils.Sequence)
 
     model = self._get_model()
     counter = Counter()
-    model.evaluate(x, y, batch_size=2, callbacks=[counter])
+    model.evaluate(
+        x,
+        y,
+        batch_size=2 if not is_sequence else None,
+        steps=5 if is_sequence else None,
+        callbacks=[counter])
     self._check_counts(
         counter, {
             'on_test_batch_begin': 5,
@@ -193,10 +202,15 @@ class CallbackCountsTest(keras_parameterized.TestCase):
                                   ('with_sequence', _get_sequence()))
   def test_callback_hooks_are_called_in_predict(self, data):
     x = data[0]
+    is_sequence = isinstance(x, keras.utils.data_utils.Sequence)
 
     model = self._get_model()
     counter = Counter()
-    model.predict(x, batch_size=2, callbacks=[counter])
+    model.predict(
+        x,
+        batch_size=2 if not is_sequence else None,
+        steps=5 if is_sequence else None,
+        callbacks=[counter])
     self._check_counts(
         counter, {
             'on_predict_batch_begin': 5,
@@ -236,7 +250,8 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
         loss='mse',
         optimizer='rmsprop',
         metrics=[keras.metrics.CategoricalAccuracy(name='my_acc')],
-        run_eagerly=testing_utils.should_run_eagerly())
+        run_eagerly=testing_utils.should_run_eagerly(),
+        experimental_run_tf_function=testing_utils.should_run_tf_function())
     return model
 
   @keras_parameterized.run_with_all_model_types
@@ -266,6 +281,36 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
 
     with self.captureWritesToStream(sys.stdout) as printed:
       model.fit(dataset, epochs=2, steps_per_epoch=10)
+      self.assertRegexpMatches(printed.contents(), expected_log)
+
+  @keras_parameterized.run_with_all_model_types
+  @keras_parameterized.run_all_keras_modes
+  def test_progbar_logging_validation_data(self):
+    model = self._get_model(input_shape=(3,))
+
+    x = array_ops.ones((50, 3))
+    y = array_ops.zeros((50, 2))
+    training_dataset = dataset_ops.Dataset.from_tensor_slices((x, y)).batch(10)
+    val_dataset = dataset_ops.Dataset.from_tensor_slices((x, y)).batch(10)
+    expected_log = r'(.*5/5.*- loss:.*- my_acc:.*- val_loss:.*- val_my_acc:.*)+'
+
+    with self.captureWritesToStream(sys.stdout) as printed:
+      model.fit(training_dataset, epochs=2, validation_data=val_dataset)
+      self.assertRegexpMatches(printed.contents(), expected_log)
+
+  @keras_parameterized.run_with_all_model_types
+  @keras_parameterized.run_all_keras_modes
+  def test_progbar_logging_validation_split(self):
+    model = self._get_model(input_shape=(3,))
+
+    x = np.ones((100, 3))
+    y = np.zeros((100, 2))
+    expected_log = (
+        r'(?s).*1/2.*80/80.*- loss:.*- my_acc:.*- val_loss:.*- val_my_acc:'
+        r'.*2/2.*80/80.*- loss:.*- my_acc:.*- val_loss:.*- val_my_acc:.*')
+
+    with self.captureWritesToStream(sys.stdout) as printed:
+      model.fit(x, y, batch_size=10, epochs=2, validation_split=0.2)
       self.assertRegexpMatches(printed.contents(), expected_log)
 
   @keras_parameterized.run_with_all_model_types
@@ -867,7 +912,7 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
             num_hidden=NUM_HIDDEN, num_classes=NUM_CLASSES, input_dim=INPUT_DIM)
         model.compile(
             loss='categorical_crossentropy',
-            optimizer=keras.optimizers.SGD(lr=0.1))
+            optimizer=gradient_descent.SGD(lr=0.1))
         return model
 
       # TODO(psv): Make sure the callback works correctly when min_delta is
@@ -973,7 +1018,7 @@ class KerasCallbacksTest(keras_parameterized.TestCase):
             num_hidden=NUM_HIDDEN, num_classes=NUM_CLASSES, input_dim=INPUT_DIM)
         model.compile(
             loss='categorical_crossentropy',
-            optimizer=keras.optimizers.SGD(lr=0.1),
+            optimizer=gradient_descent.SGD(lr=0.1),
             metrics=['accuracy'])
         return model
 
@@ -1286,7 +1331,11 @@ class TestTensorBoardV2(keras_parameterized.TestCase):
     ]
     model = testing_utils.get_model_from_layers(layers, input_shape=(10, 10, 1))
     opt = gradient_descent.SGD(learning_rate=0.001)
-    model.compile(opt, 'mse', run_eagerly=testing_utils.should_run_eagerly())
+    model.compile(
+        opt,
+        'mse',
+        run_eagerly=testing_utils.should_run_eagerly(),
+        experimental_run_tf_function=testing_utils.should_run_tf_function())
     return model
 
   def test_TensorBoard_default_logdir(self):
@@ -1516,7 +1565,11 @@ class TestTensorBoardV2NonParameterizedTest(keras_parameterized.TestCase):
         keras.layers.Dense(1),
     ])
     opt = gradient_descent.SGD(learning_rate=0.001)
-    model.compile(opt, 'mse', run_eagerly=testing_utils.should_run_eagerly())
+    model.compile(
+        opt,
+        'mse',
+        run_eagerly=testing_utils.should_run_eagerly(),
+        experimental_run_tf_function=testing_utils.should_run_tf_function())
     return model
 
   def fitModelAndAssertKerasModelWritten(self, model):

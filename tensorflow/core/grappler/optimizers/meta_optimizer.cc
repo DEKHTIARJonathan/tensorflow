@@ -32,8 +32,8 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/debug_stripper.h"
 #include "tensorflow/core/grappler/optimizers/dependency_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/function_optimizer.h"
+#include "tensorflow/core/grappler/optimizers/generic_layout_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/implementation_selector.h"
-#include "tensorflow/core/grappler/optimizers/layout_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/loop_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/memory_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/model_pruner.h"
@@ -41,6 +41,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/remapper.h"
 #include "tensorflow/core/grappler/optimizers/scoped_allocator_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/shape_optimizer.h"
+#include "tensorflow/core/grappler/utils/canonicalizer.h"
 #include "tensorflow/core/grappler/utils/colocation.h"
 #include "tensorflow/core/grappler/utils/functions.h"
 #include "tensorflow/core/grappler/utils/topological_sort.h"
@@ -99,18 +100,6 @@ uint64 DeadlineMicroSeconds(const RewriterConfig& cfg) {
   }
 }
 
-Status CompressConstants(GraphDef* graph) {
-  for (int i = 0; i < graph->node_size(); ++i) {
-    NodeDef* node = graph->mutable_node(i);
-    if ((IsConstant(*node) || IsHostConstant(*node)) &&
-        HasNodeAttr(*node, "value")) {
-      AttrValue& attr_val = (*node->mutable_attr())["value"];
-      tensor::CompressTensorProtoInPlace(attr_val.mutable_tensor());
-    }
-  }
-  return Status::OK();
-}
-
 // A helper function to decide whether to enable the automatic mixed precision
 // optimizer.
 bool AutoMixedPrecisionEnabled(RewriterConfig::Toggle opt_level) {
@@ -150,7 +139,7 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
   MK_OPT("constfold", new ConstantFolding(cpu_device_));
   MK_OPT("shape", new ShapeOptimizer());
   MK_OPT("remap", new Remapper(cfg_.remapping()));
-  MK_OPT("layout", new LayoutOptimizer());
+  MK_OPT("layout", new GenericLayoutOptimizer());
   MK_OPT("auto_mixed_precision",
          new AutoMixedPrecision(cfg_.auto_mixed_precision()));
   MK_OPT("memory", new MemoryOptimizer(RewriterConfig::MANUAL));
@@ -221,17 +210,12 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(
         MakeUnique<DependencyOptimizer>(cfg_.dependency_optimization()));
   }
-  // AutoMixedPrecision (AMP) should run after ModelPruning and ConstantFolding
-  // because their simplifications enable better mixed precision conversion
-  // (e.g., SimplifyReduction avoids unnecessary blacklisting in AMP).
-  // It should run _before_ LayoutOptimizer because LayoutOptimizer may depend
-  // on the data type.
   if (AutoMixedPrecisionEnabled(cfg_.auto_mixed_precision())) {
     optimizers->push_back(
         MakeUnique<AutoMixedPrecision>(cfg_.auto_mixed_precision()));
   }
   if (cfg_.layout_optimizer() != RewriterConfig::OFF) {
-    optimizers->push_back(MakeUnique<LayoutOptimizer>());
+    optimizers->push_back(MakeUnique<GenericLayoutOptimizer>());
   }
   if (cfg_.memory_optimization() != RewriterConfig::NO_MEM_OPT) {
     if (cfg_.memory_optimizer_target_node_name_scope().empty()) {
@@ -301,7 +285,7 @@ Status MetaOptimizer::InitializeCustomGraphOptimizers(
       TF_RETURN_IF_ERROR(custom_optimizer->Init(&optimizer_config));
       optimizers->push_back(std::move(custom_optimizer));
     } else {
-      // If there are no custom optimizers with given name, try to initalize a
+      // If there are no custom optimizers with given name, try to initialize a
       // default optimizer. This way, custom configurable optimizers can be
       // mixed with default optimizers in any order.
       auto optimizer = MakeNewOptimizer(optimizer_config.name());
@@ -418,6 +402,7 @@ Status MetaOptimizer::OptimizeGraph(Cluster* cluster, const GrapplerItem& item,
                           reinterpret_cast<uintptr_t>(optimized_graph)),
           *optimized_graph);
     }
+
     for (const auto& optimizer : optimizers) {
       GRAPPLER_RETURN_IF_DEADLINE_EXCEEDED();
       // Some optimizers can run only once.
@@ -481,9 +466,6 @@ Status MetaOptimizer::OptimizeGraph(Cluster* cluster, const GrapplerItem& item,
                                     optimized_graph, &optimization_result));
     GRAPPLER_RETURN_IF_DEADLINE_EXCEEDED();
   }
-
-  // Compress the constants in the final graph.
-  TF_RETURN_IF_ERROR(CompressConstants(optimized_graph));
 
   bool is_optimized = std::find_if(optimization_result.results.begin(),
                                    optimization_result.results.end(),
@@ -736,7 +718,7 @@ Status MetaOptimizer::Optimize(Cluster* cluster, const GrapplerItem& item,
   }
 
   VLOG(1) << "Optimized " << optimized_funcs.size()
-          << " functions: " << str_util::Join(optimized_funcs, ", ");
+          << " functions: " << absl::StrJoin(optimized_funcs, ", ");
 
   if (VLOG_IS_ON(1)) {
     DumpGraphDefToFile(
@@ -838,8 +820,6 @@ Status OptimizeGraph(
 
   std::unique_ptr<tensorflow::Graph> optimized_graph(
       new tensorflow::Graph(OpRegistry::Global()));
-  TF_RETURN_IF_ERROR(ConvertGraphDefToGraph(GraphConstructorOptions(),
-                                            out_graph, optimized_graph.get()));
 
   // Copy optimized functions back to the overlay lib.
   if (flib) {
@@ -853,25 +833,28 @@ Status OptimizeGraph(
     }
   }
 
-  *g = std::move(optimized_graph);
+  TF_RETURN_IF_ERROR(ConvertGraphDefToGraph(
+      GraphConstructorOptions(), std::move(out_graph), optimized_graph.get()));
 
   // The graph conversion sets the requested device names but not the
   // assigned device names. However, since at this point the graph is
   // placed TF expects an assigned device name for every node. Therefore
   // we copy the requested device into the assigned device field.
-  for (Node* node : (*g)->nodes()) {
+  for (Node* node : optimized_graph->nodes()) {
     if (node->IsOp() && node->assigned_device_name().empty()) {
       if (node->requested_device().empty()) {
         return errors::Internal(
             "Either placer did not place the node or Grappler did not "
             "copy the assigned device. Contact Grappler team since latter "
             "is more likely. Node=",
-            node->name(), " Graph: ", (*g)->ToGraphDefDebug().DebugString());
+            node->name(),
+            " Graph: ", optimized_graph->ToGraphDefDebug().DebugString());
       }
       node->set_assigned_device_name(node->requested_device());
     }
   }
 
+  *g = std::move(optimized_graph);
   return Status::OK();
 }
 

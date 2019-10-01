@@ -1,16 +1,17 @@
 # Description:
 #   contains parts of TensorFlow that are experimental or unstable and which are not supported.
 
-licenses(["notice"])  # Apache 2.0
+load("//tensorflow/core/platform:default/build_config.bzl", "tf_proto_library")
+load("//tensorflow:tensorflow.bzl", "py_test")
+
+package(
+    default_visibility = [
+        "//tensorflow:internal",
+    ],
+    licenses = ["notice"],  # Apache 2.0
+)
 
 exports_files(["LICENSE"])
-
-package(default_visibility = [
-    "//tensorflow:internal",
-])
-
-load("//tensorflow/core:platform/default/build_config.bzl", "tf_proto_library")
-load("//tensorflow:tensorflow.bzl", "py_test")
 
 py_library(
     name = "training_py",
@@ -173,7 +174,7 @@ py_test(
 
 py_test(
     name = "sampling_ops_test",
-    size = "small",
+    size = "medium",
     srcs = ["python/training/sampling_ops_test.py"],
     python_version = "PY2",
     srcs_version = "PY2AND3",

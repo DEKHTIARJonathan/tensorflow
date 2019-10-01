@@ -29,6 +29,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/tensor.h"
 
+#include "absl/strings/escaping.h"
 #include "tensorflow/core/framework/allocation_description.pb.h"
 #include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/resource_handle.pb.h"
@@ -514,7 +515,12 @@ TensorBuffer* FromProtoField<Variant>(Allocator* a, const TensorProto& in,
   if (in_n <= 0) {
     std::fill_n(data, n, Variant());
   } else {
-    for (int64 i = 0; i < in_n; ++i) {
+    // If tensor shape says we have n < in_n elements in the output tensor
+    // then make sure to only decode the first n out of the in_n elements in the
+    // in tensors. In all other cases, we decode all in_n elements of in and set
+    // the remaining elements up to n to be the default Variant() value.
+    const int64 real_n = n < in_n ? n : in_n;
+    for (int64 i = 0; i < real_n; ++i) {
       data[i] = in.variant_val(i);
       if (!DecodeUnaryVariant(&data[i])) {
         LOG(ERROR) << "Could not decode variant with type_name: \""
@@ -964,9 +970,9 @@ inline const strings::AlphaNum& PrintOneElement(const strings::AlphaNum& a,
 }
 inline string PrintOneElement(const string& a, bool print_v2) {
   if (print_v2) {
-    return "\"" + str_util::CEscape(a) + "\"";
+    return "\"" + absl::CEscape(a) + "\"";
   } else {
-    return str_util::CEscape(a);
+    return absl::CEscape(a);
   }
 }
 inline float PrintOneElement(const Eigen::half& h, bool print_v2) {
@@ -985,7 +991,7 @@ void PrintOneDim(int dim_index, const gtl::InlinedVector<int64, 4>& shape,
     for (int64 i = 0; i < element_count; i++) {
       if (*data_index >= limit) {
         // If not enough elements has been printed, append "...".
-        if (dim_index != 0 && i < element_count) {
+        if (dim_index != 0) {
           strings::StrAppend(result, "...");
         }
         return;

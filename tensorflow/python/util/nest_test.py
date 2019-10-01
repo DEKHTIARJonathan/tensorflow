@@ -32,6 +32,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
 from tensorflow.python.util import nest
+from tensorflow.python.util.compat import collections_abc
 
 try:
   import attr  # pylint:disable=g-import-not-at-top
@@ -39,7 +40,7 @@ except ImportError:
   attr = None
 
 
-class _CustomMapping(collections.Mapping):
+class _CustomMapping(collections_abc.Mapping):
 
   def __init__(self, *args, **kwargs):
     self._wrapped = dict(*args, **kwargs)
@@ -171,6 +172,23 @@ class NestTest(parameterized.TestCase, test.TestCase):
         custom_reconstruction)
     self.assertEqual({"d": 3, "b": 1, "a": 0, "c": 2}, plain_reconstruction)
 
+  @test_util.assert_no_new_pyobjects_executing_eagerly
+  def testFlattenAndPackMappingViews(self):
+    """`flatten` orders dicts by key, including OrderedDicts."""
+    ordered = collections.OrderedDict([("d", 3), ("b", 1), ("a", 0), ("c", 2)])
+
+    # test flattening
+    ordered_keys_flat = nest.flatten(ordered.keys())
+    ordered_values_flat = nest.flatten(ordered.values())
+    ordered_items_flat = nest.flatten(ordered.items())
+    self.assertEqual([3, 1, 0, 2], ordered_values_flat)
+    self.assertEqual(["d", "b", "a", "c"], ordered_keys_flat)
+    self.assertEqual(["d", 3, "b", 1, "a", 0, "c", 2], ordered_items_flat)
+
+    # test packing
+    self.assertEqual([("d", 3), ("b", 1), ("a", 0), ("c", 2)],
+                     nest.pack_sequence_as(ordered.items(), ordered_items_flat))
+
   Abc = collections.namedtuple("A", ("b", "c"))  # pylint: disable=invalid-name
 
   @test_util.assert_no_new_pyobjects_executing_eagerly
@@ -258,6 +276,9 @@ class NestTest(parameterized.TestCase, test.TestCase):
     self.assertTrue(nest.is_nested(((7, 8), (5, 6))))
     self.assertTrue(nest.is_nested([]))
     self.assertTrue(nest.is_nested({"a": 1, "b": 2}))
+    self.assertTrue(nest.is_nested({"a": 1, "b": 2}.keys()))
+    self.assertTrue(nest.is_nested({"a": 1, "b": 2}.values()))
+    self.assertTrue(nest.is_nested({"a": 1, "b": 2}.items()))
     self.assertFalse(nest.is_nested(set([1, 2])))
     ones = array_ops.ones([2, 3])
     self.assertFalse(nest.is_nested(ones))
@@ -475,10 +496,12 @@ class NestTest(parameterized.TestCase, test.TestCase):
       nest.map_structure(lambda x, y: None, ((3, 4), 5), (3, (4, 5)),
                          check_types=False)
 
-    with self.assertRaisesRegexp(ValueError, "Only valid keyword argument"):
+    with self.assertRaisesRegexp(ValueError,
+                                 "Only valid keyword argument.*foo"):
       nest.map_structure(lambda x: None, structure1, foo="a")
 
-    with self.assertRaisesRegexp(ValueError, "Only valid keyword argument"):
+    with self.assertRaisesRegexp(ValueError,
+                                 "Only valid keyword argument.*foo"):
       nest.map_structure(lambda x: None, structure1, check_types=False, foo="a")
 
   ABTuple = collections.namedtuple("ab_tuple", "a, b")  # pylint: disable=invalid-name
