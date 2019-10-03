@@ -19,18 +19,23 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import numpy as np
 
 from tensorflow.core.framework import types_pb2
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.core.protobuf import rewriter_config_pb2
+from tensorflow.python import tf2
 
 from tensorflow.python.client import session
 from tensorflow.python.compat import compat
+from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import function
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
 from tensorflow.python.framework import test_util
+from tensorflow.python.layers import layers
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gradients
@@ -41,7 +46,9 @@ from tensorflow.python.ops import nn_impl
 from tensorflow.python.ops import random_ops
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variables
+from tensorflow.python.ops.losses import losses
 from tensorflow.python.platform import test
+from tensorflow.python.training import adam
 from tensorflow.python.training import gradient_descent
 from tensorflow.python.training.experimental.mixed_precision import auto_mixed_precision_scope
 
@@ -734,6 +741,7 @@ class AutoMixedPrecisionTest(test.TestCase):
           node_map, 'while/gradients/while/dense/MatMul_grad/MatMul_1')
       self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
 
+  @test_util.run_deprecated_v1
   def test_scope_disable(self):
     """Test graph with convolution followed by batch norm."""
     with compat.forward_compatibility_horizon(2019, 11, 11):
