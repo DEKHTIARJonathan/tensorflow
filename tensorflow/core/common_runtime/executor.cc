@@ -1677,9 +1677,9 @@ class NvtxDomain {
   nvtxDomainHandle_t handle_;
 };
 
-static const NvtxDomain& GetNvtxTensorFlowDomain() {
+static const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
   // Singleton because we want the same domain for the lifetime of the process.
-  static NvtxDomain nvtx_domain("TensorFlow");
+  static NvtxDomain nvtx_domain("tensorflow-core");
   return nvtx_domain;
 }
 
@@ -1964,7 +1964,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         msg = node->def().op() + ": " + node->name();
       }
       nvtx_range = nvtx_helper::nvtxRangeStart(
-          msg.c_str(), node->def().op().c_str(), GetNvtxTensorFlowDomain());
+          msg.c_str(), node->def().op().c_str(), GetNvtxTensorFlowCoreDomain());
     }
 #endif  // GOOGLE_CUDA
 
@@ -1992,7 +1992,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         completed = NodeDone(s, item.node, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
         if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-          nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
+          nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
         }
 #endif  // GOOGLE_CUDA
         continue;
@@ -2062,7 +2062,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
               NodeDone(s, state->item->node, ready, stats, nullptr);
 #if GOOGLE_CUDA
           if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-            nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
+            nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
           }
 #endif  // GOOGLE_CUDA
           delete state;
@@ -2150,7 +2150,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       completed = NodeDone(s, item.node, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
       if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-        nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
+        nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
       }
 #endif  // GOOGLE_CUDA
     }
