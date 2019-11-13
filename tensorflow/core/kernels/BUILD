@@ -509,6 +509,7 @@ tf_cuda_library(
         "//tensorflow/core:logger",
         "//tensorflow/core:stream_executor",
         "//tensorflow/core/util/proto:proto_utils",
+        "//tensorflow/stream_executor/cuda:cuda_helpers",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/types:span",
     ],
