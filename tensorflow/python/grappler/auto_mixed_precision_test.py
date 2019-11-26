@@ -503,7 +503,7 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
                             'gradients/Conv3D_grad/Conv3DBackpropFilterV2')
 
     output_val_ref, output_val, cost_graph = self._run(mode, output)
-    tol = 5e-2 if mode == 'mkl' else 1e-3
+    tol = 5e-2 if mode == 'mkl' else 3e-3
     self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
   # TODO(reedwm): Fix and enable this test with MKL. Currently this crashes with
