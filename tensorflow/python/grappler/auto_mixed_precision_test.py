@@ -467,8 +467,8 @@ class AutoMixedPrecisionTest(test.TestCase):
       self._assert_output_fp16(node_map,
                                'gradients/Conv3D_grad/Conv3DBackpropFilterV2')
 
-      output_val_ref, output_val, cost_graph = self._run(output)
-      self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
+      self.assertAllClose(output_val_ref, output_val, atol=3e-3, rtol=3e-3)
 
   @test_util.run_deprecated_v1
   @test_util.disable_xla('This test does not pass with XLA')
