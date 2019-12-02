@@ -714,6 +714,70 @@ REGISTER_GPU(complex128)
 
 namespace functor {
 
+namespace {
+
+// CUDADataType<T>::type translates from a C++ type (e.g. float) to a
+// cudaDataType_t (e.g. CUDA_R_32F).
+template <typename T>
+struct CUDADataType;
+
+template <>
+struct CUDADataType<Eigen::half> {
+  static constexpr cudaDataType_t type = CUDA_R_16F;
+};
+
+template <>
+struct CUDADataType<std::complex<Eigen::half>> {
+  static constexpr cudaDataType_t type = CUDA_C_16F;
+};
+
+template <>
+struct CUDADataType<float> {
+  static constexpr cudaDataType_t type = CUDA_R_32F;
+};
+
+template <>
+struct CUDADataType<std::complex<float>> {
+  static constexpr cudaDataType_t type = CUDA_C_32F;
+};
+
+template <>
+struct CUDADataType<double> {
+  static constexpr cudaDataType_t type = CUDA_R_64F;
+};
+
+template <>
+struct CUDADataType<std::complex<double>> {
+  static constexpr cudaDataType_t type = CUDA_C_64F;
+};
+
+template <>
+struct CUDADataType<int> {
+  static constexpr cudaDataType_t type = CUDA_R_32I;
+};
+
+template <>
+struct CUDADataType<int8> {
+  static constexpr cudaDataType_t type = CUDA_R_8I;
+};
+
+template <>
+struct CUDADataType<std::complex<int8>> {
+  static constexpr cudaDataType_t type = CUDA_C_8I;
+};
+
+template <>
+struct CUDADataType<uint8> {
+  static constexpr cudaDataType_t type = CUDA_R_8U;
+};
+
+template <>
+struct CUDADataType<std::complex<uint8>> {
+  static constexpr cudaDataType_t type = CUDA_C_8U;
+};
+
+}  // namespace
+
 template <typename T>
 class CSRSparseMatrixMatMul<GPUDevice, T> {
  public:
@@ -726,10 +790,10 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
     CudaSparse cuda_sparse(ctx);
     TF_RETURN_IF_ERROR(cuda_sparse.Initialize());
     {
-      // Use Csrmm to calculate:
+      // Use SpMM to calculate:
       //   C = alpha * op(A) * op(B) + beta * C
       // where alpha = 1.0, beta = 0.0, A is sparse and B and C are dense.
-      // Note that Csrmm assumes B and C are in column-major form; so we
+      // Note that SpMM assumes B and C are in column-major form; so we
       // use transB == true, and manually transpose the output in place
       // using blas<t>geam.
       // TODO(ebrevdo,rmlarsen): Add support for transposition and adjoint.
@@ -739,21 +803,13 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       const T alpha = 1;
       const T beta = 0;
 
-      // transA must be non-transpose if transB is transpose (cusparse
-      // limitation).
+      // TODO(nluehr): Maybe also support transpose A now that SpMM is used.
       const cusparseOperation_t transA = CUSPARSE_OPERATION_NON_TRANSPOSE;
 
       // transB: b is row-major, and cusparse requires col-major b (or
       // equivalently transB == transpose).  this version is actually more
       // efficient.
       const cusparseOperation_t transB = CUSPARSE_OPERATION_TRANSPOSE;
-
-      cusparseMatDescr_t descrA;
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateMatDescr(&descrA));
-      TF_RETURN_IF_CUSPARSE_ERROR(
-          cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL));
-      TF_RETURN_IF_CUSPARSE_ERROR(
-          cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO));
 
       // A is (m, k), Bt is (ldb, k) and Ct is (ldc, n)
       const int k = b.dimension(0);
@@ -774,15 +830,44 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       // ldb: leading dimension of B. If op(B)=B, it must be at least max(1, k)
       // if op(A) = A and at least max (1, m) otherwise. If op(B) != B, it must
       // be at least max(1, n).
-      const int ldb = n;
+      const int64_t ldb = n;
       // ldc: leading dimension of C. It must be at least max(1, m) if
       // op(A) = A and at least max(1, k) otherwise.
-      const int ldc = m;
+      const int64_t ldc = m;
 
+      cusparseSpMatDescr_t matA;
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateCsr(&matA, m, k, nnz,
+                                  const_cast<int*>(a.row_ptr.data()),
+                                  const_cast<int*>(a.col_ind.data()),
+                                  const_cast<T*>(a.values.data()),
+                                  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                                  CUSPARSE_INDEX_BASE_ZERO, CUDADataType<T>::type));
+
+      cusparseDnMatDescr_t matB, matC;
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateDnMat(&matB, n, k, ldb,
+                                  const_cast<T*>(b.data()),
+                                  CUDADataType<T>::type, CUSPARSE_ORDER_COL));
+
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateDnMat(&matC, m, n, ldc, c.data(),
+                                  CUDADataType<T>::type, CUSPARSE_ORDER_COL));
+      
+      size_t bufferSize = 0;
       TF_RETURN_IF_ERROR(
-          cuda_sparse.Csrmm(transA, transB, m, n, k, nnz, &alpha, descrA,
-                            a.values.data(), a.row_ptr.data(), a.col_ind.data(),
-                            b.data(), ldb, &beta, c.data(), ldc));
+          cuda_sparse.SpMMBufferSize(transA, transB, &alpha, matA, matB, &beta,
+                                     matC, CUSPARSE_MM_ALG_DEFAULT,
+                                     &bufferSize));
+
+      Tensor buffer;
+      TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_INT8, {bufferSize}, &buffer));
+      DCHECK(buffer.flat<int8>().data() != nullptr);
+      TF_RETURN_IF_ERROR(
+          cuda_sparse.SpMM(transA, transB, &alpha, matA, matB, &beta,
+                           matC, CUSPARSE_MM_ALG_DEFAULT,
+                           buffer.flat<int8>().data()));
+
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroyDnMat(matB));
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroyDnMat(matC));
+      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroySpMat(matA));
     }
 
     return Status::OK();
@@ -805,7 +890,7 @@ class CSRSparseMatrixMatVec<GPUDevice, T> {
     CudaSparse cuda_sparse(ctx);
     TF_RETURN_IF_ERROR(cuda_sparse.Initialize());
     {
-      // Use Csrmv to calculate:
+      // Use CsrmvEx/SpMV to calculate:
       //   y = alpha * op(A) * x + beta * y
       // where alpha = 1.0, beta = 0.0, A is a sparse matrix and x and y are
       // dense vectors.
@@ -815,18 +900,11 @@ class CSRSparseMatrixMatVec<GPUDevice, T> {
       const T alpha = 1;
       const T beta = 0;
 
-      cusparseMatDescr_t descrA;
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateMatDescr(&descrA));
-      TF_RETURN_IF_CUSPARSE_ERROR(
-          cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL));
-      TF_RETURN_IF_CUSPARSE_ERROR(
-          cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO));
-
       const int m = a.dense_shape_host(0);
       const int n = a.dense_shape_host(1);
       const int nnz = a.values.size();
       DCHECK_EQ(nnz, a.col_ind.size());
-      TF_RETURN_IF_ERROR(cuda_sparse.Csrmv(transA_, m, n, nnz, &alpha, descrA,
+      TF_RETURN_IF_ERROR(cuda_sparse.Csrmv(transA_, m, n, nnz, &alpha,
                                            a.values.data(), a.row_ptr.data(),
                                            a.col_ind.data(), x, &beta, y));
     }

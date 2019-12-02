@@ -118,37 +118,6 @@ class CudaSparse {
   //
 
   // Solves tridiagonal system of equations.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2 routine. gtsv will be
-  // removed in Cuda Toolkit 11.0.
-  // See: https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsv
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status Gtsv(int m, int n, const Scalar *dl, const Scalar *d, const Scalar *du,
-              Scalar *B, int ldb) const;
-
-  // Solves tridiagonal system of equations without pivoting.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2_nopivot routine.
-  // gtsv_nopivot will be removed in Cuda Toolkit 11.0.
-  // See:
-  // https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsv_nopivot
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status GtsvNoPivot(int m, int n, const Scalar *dl, const Scalar *d,
-                     const Scalar *du, Scalar *B, int ldb) const;
-
-  // Solves a batch of tridiagonal systems of equations. Doesn't support
-  // multiple right-hand sides per each system. Doesn't do pivoting.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2StridedBatch routine.
-  // gtsvStridedBatch will be removed in Cuda Toolkit 11.0.
-  // See:
-  // https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsvstridedbatch
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status GtsvStridedBatch(int m, const Scalar *dl, const Scalar *d,
-                          const Scalar *du, Scalar *x, int batchCount,
-                          int batchStride) const;
-
-  // Solves tridiagonal system of equations.
   // See: https://docs.nvidia.com/cuda/cusparse/index.html#gtsv2
   template <typename Scalar>
   Status Gtsv2(int m, int n, const Scalar *dl, const Scalar *d,
@@ -205,26 +174,6 @@ class CudaSparse {
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-coo2csr.
   Status Coo2csr(const int* cooRowInd, int nnz, int m, int* csrRowPtr) const;
 
-  // Sparse-dense matrix multiplication C = alpha * op(A) * op(B)  + beta * C,
-  // where A is a sparse matrix in CSR format, B and C are dense tall
-  // matrices.  This routine allows transposition of matrix B, which
-  // may improve performance.  See:
-  // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrmm2
-  //
-  // **NOTE** Matrices B and C are expected to be in column-major
-  // order; to make them consistent with TensorFlow they
-  // must be transposed (or the matmul op's pre/post-procesisng must take this
-  // into account).
-  //
-  // **NOTE** This is an in-place operation for data in C.
-  template <typename Scalar>
-  Status Csrmm(cusparseOperation_t transA, cusparseOperation_t transB, int m,
-               int n, int k, int nnz, const Scalar* alpha_host,
-               const cusparseMatDescr_t descrA, const Scalar* csrSortedValA,
-               const int* csrSortedRowPtrA, const int* csrSortedColIndA,
-               const Scalar* B, int ldb, const Scalar* beta_host, Scalar* C,
-               int ldc) const;
-
   // Sparse-dense vector multiplication y = alpha * op(A) * x  + beta * y,
   // where A is a sparse matrix in CSR format, x and y are dense vectors. See:
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrmv_mergepath
@@ -232,30 +181,38 @@ class CudaSparse {
   // **NOTE** This is an in-place operation for data in y.
   template <typename Scalar>
   Status Csrmv(cusparseOperation_t transA, int m, int n, int nnz,
-               const Scalar* alpha_host, const cusparseMatDescr_t descrA,
-               const Scalar* csrSortedValA, const int* csrSortedRowPtrA,
-               const int* csrSortedColIndA, const Scalar* x,
-               const Scalar* beta_host, Scalar* y) const;
+               const Scalar* alpha_host, const Scalar* csrSortedValA,
+               const int* csrSortedRowPtrA, const int* csrSortedColIndA,
+               const Scalar* x, const Scalar* beta_host, Scalar* y) const;
 
-  // Computes sparse-sparse matrix addition of matrices
-  // stored in CSR format.  This is part one: calculate nnz of the
-  // output.  csrSortedRowPtrC must be preallocated on device with
-  // m + 1 entries.  See:
-  // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgeam.
-  Status CsrgeamNnz(int m, int n, const cusparseMatDescr_t descrA, int nnzA,
-                    const int* csrSortedRowPtrA, const int* csrSortedColIndA,
-                    const cusparseMatDescr_t descrB, int nnzB,
-                    const int* csrSortedRowPtrB, const int* csrSortedColIndB,
-                    const cusparseMatDescr_t descrC, int* csrSortedRowPtrC,
-                    int* nnzTotalDevHostPtr);
-
-  // Computes sparse - sparse matrix addition of matrices
-  // stored in CSR format.  This is part two: perform sparse-sparse
-  // addition.  csrValC and csrColIndC must be allocated on the device
-  // with nnzTotalDevHostPtr entries (as calculated by CsrgeamNnz).  See:
-  // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgeam.
+  // Workspace size query for sparse-dense matrix multiplication. Helper function
+  // for SpMM which computes y = alpha * op(A) * op(B) + beta * C, where A is
+  // a sparse matrix in CSR format, B and C are dense matricies in column-major
+  // format. Returns needed workspace size in bytes.
   template <typename Scalar>
-  Status Csrgeam(int m, int n, const Scalar* alpha,
+  Status SpMMBufferSize(cusparseOperation_t transA, cusparseOperation_t transB,
+                        const Scalar* alpha, const cusparseSpMatDescr_t matA,
+                        const cusparseDnMatDescr_t matB, const Scalar* beta,
+                        cusparseDnMatDescr_t matC, cusparseSpMMAlg_t alg,
+                        size_t* bufferSize) const;
+
+  // Sparse-dense matrix multiplication y = alpha * op(A) * op(B) + beta * C,
+  // where A is a sparse matrix in CSR format, B and C are dense matricies in
+  // column-major format. Buffer is assumed to be at least as large as the
+  // workspace size returned by SpMMBufferSize().
+  //
+  // **NOTE** This is an in-place operation for data in C.
+  template <typename Scalar>
+  Status SpMM(cusparseOperation_t transA, cusparseOperation_t transB,
+              const Scalar* alpha, const cusparseSpMatDescr_t matA,
+              const cusparseDnMatDescr_t matB, const Scalar* beta,
+              cusparseDnMatDescr_t matC, cusparseSpMMAlg_t alg,
+              int8* buffer) const;
+
+  // Computes workspace size for sparse - sparse matrix addition of matrices
+  // stored in CSR format.
+  template <typename Scalar>
+  Status Csrgeam2BufferSizeExt(int m, int n, const Scalar* alpha,
                  const cusparseMatDescr_t descrA, int nnzA,
                  const Scalar* csrSortedValA, const int* csrSortedRowPtrA,
                  const int* csrSortedColIndA, const Scalar* beta,
@@ -263,21 +220,62 @@ class CudaSparse {
                  const Scalar* csrSortedValB, const int* csrSortedRowPtrB,
                  const int* csrSortedColIndB, const cusparseMatDescr_t descrC,
                  Scalar* csrSortedValC, int* csrSortedRowPtrC,
-                 int* csrSortedColIndC);
+                 int* csrSortedColIndC, size_t* bufferSize);
+
+  // Computes sparse-sparse matrix addition of matrices
+  // stored in CSR format.  This is part one: calculate nnz of the
+  // output.  csrSortedRowPtrC must be preallocated on device with
+  // m + 1 entries.  See:
+  // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgeam.
+  Status Csrgeam2Nnz(int m, int n, const cusparseMatDescr_t descrA, int nnzA,
+                    const int* csrSortedRowPtrA, const int* csrSortedColIndA,
+                    const cusparseMatDescr_t descrB, int nnzB,
+                    const int* csrSortedRowPtrB, const int* csrSortedColIndB,
+                    const cusparseMatDescr_t descrC, int* csrSortedRowPtrC,
+                    int* nnzTotalDevHostPtr, void* workspace);
+
+  // Computes sparse - sparse matrix addition of matrices
+  // stored in CSR format.  This is part two: perform sparse-sparse
+  // addition.  csrValC and csrColIndC must be allocated on the device
+  // with nnzTotalDevHostPtr entries (as calculated by CsrgeamNnz).  See:
+  // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgeam.
+  template <typename Scalar>
+  Status Csrgeam2(int m, int n, const Scalar* alpha,
+                 const cusparseMatDescr_t descrA, int nnzA,
+                 const Scalar* csrSortedValA, const int* csrSortedRowPtrA,
+                 const int* csrSortedColIndA, const Scalar* beta,
+                 const cusparseMatDescr_t descrB, int nnzB,
+                 const Scalar* csrSortedValB, const int* csrSortedRowPtrB,
+                 const int* csrSortedColIndB, const cusparseMatDescr_t descrC,
+                 Scalar* csrSortedValC, int* csrSortedRowPtrC,
+                 int* csrSortedColIndC, void* pBuffer);
+
+  // Computes sparse-sparse matrix multiplication of matrices
+  // stored in CSR format.  This is part zero: calculate required workspace
+  // size.
+  template<typename Scalar>
+  Status CsrgemmBufferSize(int m, int n, int k,
+                           const cusparseMatDescr_t descrA, int nnzA,
+                           const int* csrSortedRowPtrA,
+                           const int* csrSortedColIndA,
+                           const cusparseMatDescr_t descrB, int nnzB,
+                           const int* csrSortedRowPtrB,
+                           const int* csrSortedColIndB,
+                           csrgemm2Info_t info, size_t* workspaceBytes);
 
   // Computes sparse-sparse matrix multiplication of matrices
   // stored in CSR format.  This is part one: calculate nnz of the
   // output.  csrSortedRowPtrC must be preallocated on device with
   // m + 1 entries.  See:
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgemm.
-  Status CsrgemmNnz(cusparseOperation_t transA, cusparseOperation_t transB,
-                    int m, int k, int n, const cusparseMatDescr_t descrA,
+  Status CsrgemmNnz(int m, int n, int k, const cusparseMatDescr_t descrA,
                     int nnzA, const int* csrSortedRowPtrA,
                     const int* csrSortedColIndA,
                     const cusparseMatDescr_t descrB, int nnzB,
                     const int* csrSortedRowPtrB, const int* csrSortedColIndB,
-                    const cusparseMatDescr_t descrC, int* csrSortedRowPtrC,
-                    int* nnzTotalDevHostPtr);
+                    const cusparseMatDescr_t descrC,
+                    int* csrSortedRowPtrC, int* nnzTotalDevHostPtr,
+                    csrgemm2Info_t info, void* workspace);
 
   // Computes sparse - sparse matrix matmul of matrices
   // stored in CSR format.  This is part two: perform sparse-sparse
@@ -285,14 +283,16 @@ class CudaSparse {
   // with nnzTotalDevHostPtr entries (as calculated by CsrgemmNnz).  See:
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgemm.
   template <typename Scalar>
-  Status Csrgemm(cusparseOperation_t transA, cusparseOperation_t transB, int m,
-                 int k, int n, const cusparseMatDescr_t descrA, int nnzA,
+  Status Csrgemm(int m, int n, int k,
+                 const cusparseMatDescr_t descrA, int nnzA,
                  const Scalar* csrSortedValA, const int* csrSortedRowPtrA,
                  const int* csrSortedColIndA, const cusparseMatDescr_t descrB,
                  int nnzB, const Scalar* csrSortedValB,
                  const int* csrSortedRowPtrB, const int* csrSortedColIndB,
-                 const cusparseMatDescr_t descrC, Scalar* csrSortedValC,
-                 int* csrSortedRowPtrC, int* csrSortedColIndC);
+                 const cusparseMatDescr_t descrC,
+                 Scalar* csrSortedValC, int* csrSortedRowPtrC,
+                 int* csrSortedColIndC, const csrgemm2Info_t info,
+                 void* workspace);
 
   // In-place reordering of unsorted CSR to sorted CSR.
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csru2csr
