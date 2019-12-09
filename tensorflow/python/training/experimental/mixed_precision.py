@@ -42,7 +42,7 @@ def _register_wrapper_optimizer_cls(optimizer_cls, wrapper_optimizer_cls):
   _REGISTERED_WRAPPER_OPTIMIZER_CLS[optimizer_cls] = wrapper_optimizer_cls
 
 
-@tf_export(v1=['train.experimental.auto_mixed_precision_scope'])
+@tf_export('train.experimental.auto_mixed_precision_scope')
 @contextlib.contextmanager
 def auto_mixed_precision_scope(select=True):
   """Allow/Disallow the rewriting of specific sections of the graph.
