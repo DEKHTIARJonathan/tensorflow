@@ -26,7 +26,6 @@ limitations under the License.
 namespace tensorflow {
 namespace nvtx {
 
-// #if GOOGLE_CUDA
 inline unsigned hash_string(const char* c) {
   enum { M = 33 };
   unsigned hash = 5381;
@@ -46,9 +45,14 @@ inline uint32_t get_color(unsigned hash) {
   return colors[hash % ncolor];
 }
 
-inline nvtxRangeId_t nvtxRangeStart(const char* msg,
-                                    uint32_t color = 0x008D9BAF,
-                                    uint32_t category = 0) {
+inline nvtxRangeId_t nvtxRangeStartHelper(const char* msg,
+                                          const char* type,
+                                          nvtxDomainHandle_t nvtx_domain,
+                                          bool set_category = true) {
+  unsigned h = hash_string(type);
+  uint32_t color = get_color(h);
+  uint32_t category = set_category ? h : 0;
+
   nvtxEventAttributes_t attrs = {};
   attrs.version = NVTX_VERSION;
   attrs.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
@@ -57,15 +61,11 @@ inline nvtxRangeId_t nvtxRangeStart(const char* msg,
   attrs.messageType = NVTX_MESSAGE_TYPE_ASCII;
   attrs.message.ascii = msg;
   attrs.category = category;
-  return ::nvtxRangeStartEx(&attrs);
-}
 
-inline nvtxRangeId_t nvtxRangeStart(const char* msg, const char* type,
-                                    bool set_category = true) {
-  unsigned h = hash_string(type);
-  uint32_t color = get_color(h);
-  uint32_t category = set_category ? h : 0;
-  return nvtxRangeStart(msg, color, category);
+  if (nvtx_domain != NULL)
+    return ::nvtxDomainRangeStartEx(nvtx_domain, &attrs);
+
+  return ::nvtxRangeStartEx(&attrs);
 }
 
 // A helper function to decide whether to enable CUDA NVTX profiling ranges.
@@ -214,35 +214,50 @@ nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
     } else {
       msg = node_op + ": " + node_name;
     }
-    nvtx_range = nvtxRangeStart(msg.c_str(), node_op.c_str());
-  }
-  return nvtx_range;
-}
-
-// The caller needs to prepare the message before calling the
-// MaybeNvtxRangeStartWithMsg.
-nvtxRangeId_t MaybeNvtxRangeStartWithMsg(string msg, string node_op) {
-  nvtxRangeId_t nvtx_range;
-  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    nvtx_range = nvtxRangeStart(msg.c_str(), node_op.c_str());
+    nvtx_range = nvtxRangeStartHelper(msg.c_str(), node_op.c_str(),
+                                      /*nvtx_domain=*/NULL);
   }
   return nvtx_range;
 }
 
 void MaybeNvtxRangeEnd(nvtxRangeId_t nvtx_range) {
   if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    nvtxRangeEnd(nvtx_range);
+    ::nvtxRangeEnd(nvtx_range);
   }
 }
-// #else
-// typedef uint64_t nvtxRangeId_t;
 
-// nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
-//   return 0;
-// }
+class NvtxDomain {
+ public:
+  explicit NvtxDomain(const char* name) : handle_(nvtxDomainCreateA(name)) {}
+  ~NvtxDomain() { nvtxDomainDestroy(handle_); }
+  operator nvtxDomainHandle_t() const { return handle_; }
 
-// void MaybeNvtxRangeEnd(nvtxRangeId_t nvtx_range) {}
-// #endif  // GOOGLE_CUDA
+ private:
+  nvtxDomainHandle_t handle_;
+  TF_DISALLOW_COPY_AND_ASSIGN(NvtxDomain);
+};
+
+static const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
+  // Singleton because we want the same domain for the lifetime of the process.
+  static NvtxDomain nvtx_domain("tensorflow-core");
+  return nvtx_domain;
+}
+
+// Sets the nvtx domain and associates all the nvtx ranges to it.
+nvtxRangeId_t MaybeNvtxDomainRangeStartMsg(string msg, string node_op) {
+  nvtxRangeId_t nvtx_range;
+  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
+    nvtx_range = nvtxRangeStartHelper(msg.c_str(), node_op.c_str(),
+                                      GetNvtxTensorFlowCoreDomain());
+  }
+  return nvtx_range;
+}
+
+void MaybeNvtxDomainRangeEnd(nvtxRangeId_t nvtx_range) {
+  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
+    ::nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
+  }
+}
 
 }  // namespace nvtx
 }  // namespace tensorflow

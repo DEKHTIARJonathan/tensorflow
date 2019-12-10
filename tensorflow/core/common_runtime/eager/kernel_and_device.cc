@@ -298,8 +298,8 @@ Status KernelAndDeviceOp::Run(
   OpKernelContext context(&params);
 
 #if GOOGLE_CUDA
-  auto nvtx_range = nvtx::MaybeNvtxRangeStart(kernel_->def().op(),
-                                              kernel_->name());
+  string msg = kernel_->def().op() + ": " + kernel_->name();
+  auto nvtx_range = nvtx::MaybeNvtxDomainRangeStartMsg(msg, kernel_->def().op());
 #endif // GOOGLE_CUDA
 
   if (kernel_->def().op() == "_Recv") {
@@ -337,7 +337,7 @@ Status KernelAndDeviceOp::Run(
   }
 
 #if GOOGLE_CUDA
-  nvtx::MaybeNvtxRangeEnd(nvtx_range);
+  nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
 #endif // GOOGLE_CUDA
 
   return Status::OK();

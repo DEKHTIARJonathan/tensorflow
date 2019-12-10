@@ -1809,7 +1809,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         msg = item.kernel->def().op() + ": " + item.kernel->name();
       }
     }
-    auto nvtx_range = nvtx::MaybeNvtxRangeStartWithMsg(msg, item.kernel->def().op());
+    auto nvtx_range = nvtx::MaybeNvtxDomainRangeStartMsg(msg, item.kernel->def().op());
 #endif // GOOGLE_CUDA
 
     TensorReferenceVector accessed_tensors;
@@ -1835,7 +1835,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         // Continue to process the nodes in 'inline_ready'.
         completed = NodeDone(s, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
-        nvtx::MaybeNvtxRangeEnd(nvtx_range);
+        nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
 #endif // GOOGLE_CUDA
         continue;
       }
@@ -1901,7 +1901,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
           }
           const bool completed = NodeDone(s, ready, stats, nullptr);
 #if GOOGLE_CUDA
-          nvtx::MaybeNvtxRangeEnd(nvtx_range);
+          nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
 #endif // GOOGLE_CUDA
           delete state;
           if (completed) ScheduleFinish();
@@ -1996,7 +1996,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       // Postprocess.
       completed = NodeDone(s, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
-      nvtx::MaybeNvtxRangeEnd(nvtx_range);
+      nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
 #endif // GOOGLE_CUDA
     }
   }  // while !inline_ready.empty()
