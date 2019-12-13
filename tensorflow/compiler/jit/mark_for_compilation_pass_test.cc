@@ -1719,7 +1719,7 @@ TEST(XlaCompilationTest, UnsupportedEnterExitPattern) {
 }
 
 TEST(XlaCompilationTest, XLALiteWhitelist) {
-  auto* whitelist_table = CreateWhitelist();
+  auto* whitelist_table = GetWhitelistTable();
   absl::flat_hash_set<string> hwhitelist;
   std::vector<string> vall_ops = XlaOpRegistry::GetAllRegisteredOps();
   absl::flat_hash_set<string> all_ops(vall_ops.begin(), vall_ops.end());
