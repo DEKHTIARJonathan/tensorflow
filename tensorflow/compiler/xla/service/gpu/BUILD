@@ -516,6 +516,7 @@ cc_library(
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
         "@local_config_cuda//cuda:cuda_headers",
+        "@nvtx_archive//:nvtx",
     ],
 )
 
