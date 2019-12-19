@@ -302,13 +302,13 @@ Status KernelAndDeviceOp::Run(
   if (nvtx::NvtxRangesEnabled() || nvtx::NvtxRangesDetailedEnabled()) {
     if (nvtx::NvtxRangesDetailedEnabled()) {
       std::vector<string> args_pieces;
-      for (int i = 0; i < inputs.size(); i++) {
+      for (int i = 0; i < inputs.GetTensorValues()->size(); i++) {
         if (i == 10) {
           // Truncate long arg lists and indicate with an ending null value.
           args_pieces.push_back("null");
           break;
         }
-        const auto& shape = inputs[i].tensor->shape();
+        const auto& shape = inputs.GetTensorValues()[i].tensor->shape();
         string shape_str = shape.unknown_rank() ? "null" : shape.DebugString();
         args_pieces.push_back(
             strings::StrCat("{\"name\":\"", kernel_->def().input(i),
