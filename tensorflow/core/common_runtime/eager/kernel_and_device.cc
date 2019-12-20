@@ -308,7 +308,7 @@ Status KernelAndDeviceOp::Run(
           args_pieces.push_back("null");
           break;
         }
-        const auto& shape = inputs.GetTensorValues()[i].tensor->shape();
+        const auto& shape = inputs.GetTensorValues()->at(i).tensor->shape();
         string shape_str = shape.unknown_rank() ? "null" : shape.DebugString();
         args_pieces.push_back(
             strings::StrCat("{\"name\":\"", kernel_->def().input(i),
