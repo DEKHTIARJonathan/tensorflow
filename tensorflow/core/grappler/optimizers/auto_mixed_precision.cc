@@ -955,6 +955,12 @@ class AutoMixedPrecisionImpl {
         return std::make_unique<AutoMixedPrecisionListsMkl>();
     }
   }
+
+  Status PrintSummaryInfo(int num_processable_nodes, int num_recognized_nodes,
+                          int num_nodes_changed, int num_nonvar_casts_to_fp16,
+                          int num_whitelist_nodes, int num_blacklist_nodes,
+                          int num_blacklist_affected_nodes);
+
   Status PrintDebugLogs(bool preop, size_t timestamp);
   void LogSkippedNode(const NodeDef& node) const;
   bool MustPreserve(const NodeDef& node) const;
@@ -974,9 +980,11 @@ class AutoMixedPrecisionImpl {
   void FindTensorListImplicitFloat32Edges(
       const absl::flat_hash_set<const NodeDef*>& tensor_list_nodes,
       std::vector<NodeTypeIdEdge>* implicit_data_edges) const;
+  void CountRecognizedNodes(int* num_processable_nodes,
+                            int* num_recognized_nodes) const;
   void AddWhitelistOps(absl::flat_hash_set<int>* white_set) const;
-  void PropagateBlackFwdThroughClearAndGray(
-      absl::flat_hash_set<int>* black_set) const;
+  void PropagateBlackFwdThroughClearAndGray(absl::flat_hash_set<int>* black_set,
+                                            int* num_blacklist_nodes) const;
   void ForceColorMatchBetweenTensorListOps(
       const absl::flat_hash_set<const NodeDef*>& tensor_list_nodes,
       absl::flat_hash_set<int>* white_set,
@@ -992,7 +1000,9 @@ class AutoMixedPrecisionImpl {
       absl::flat_hash_set<int>* white_set) const;
   NodeDef BuildCastNode(const MutableGraphView::OutputPort& src, bool to_f16,
                         const string& device) const;
-  Status ChangeTypeAttrsAndAddCasts(const absl::flat_hash_set<int>& white_set);
+  Status ChangeTypeAttrsAndAddCasts(const absl::flat_hash_set<int>& white_set,
+                                    int* num_nodes_changed,
+                                    int* num_nonvar_casts_to_fp16);
 
   VirtualPlacer virtual_placer_;
   std::unordered_set<string> nodes_to_preserve_;
@@ -1046,6 +1056,29 @@ bool AutoMixedPrecisionImpl::NodeHasF16KernelForTypeAttr(
     return false;
   }
   return IsKernelRegisteredForNode(node_copy).ok();
+}
+
+Status AutoMixedPrecisionImpl::PrintSummaryInfo(
+    int num_processable_nodes, int num_recognized_nodes, int num_nodes_changed,
+    int num_nonvar_casts_to_fp16, int num_whitelist_nodes,
+    int num_blacklist_nodes, int num_blacklist_affected_nodes) {
+  LOG(INFO)
+      << "Automatic Mixed Precision Grappler Pass Summary:\n\n"
+      << "Total processable nodes: " << num_processable_nodes << "\n"
+      << "Recognized nodes available for conversion: " << num_recognized_nodes
+      << "\nTotal nodes converted: " << num_nodes_changed << "\n"
+      << "Total FP16 Cast ops used (excluding Const and Variable casts): "
+      << num_nonvar_casts_to_fp16 << "\n"
+      << "Whitelisted nodes converted: " << num_whitelist_nodes << "\n"
+      << "Blacklisted nodes blocking conversion: " << num_blacklist_nodes
+      << "\nNodes blocked from conversion by blacklisted nodes: "
+      << num_blacklist_affected_nodes << "\n\n"
+      << "For more information regarding mixed precision training, including "
+      << "how to make automatic mixed precision aware of a custom op type, "
+      << "please see the documentation available here:\n"
+      << "https://docs.nvidia.com/deeplearning/frameworks/"
+      << "tensorflow-user-guide/index.html#tfamp\n\n";
+  return Status::OK();
 }
 
 Status AutoMixedPrecisionImpl::PrintDebugLogs(bool preop, size_t timestamp) {
@@ -1345,6 +1378,11 @@ Status AutoMixedPrecisionImpl::Optimize() {
   //    This is done to increase the number of ops in the white_set without
   //    affecting numerical stability.
 
+  VLOG(2) << "Counting recognized nodes";
+  int num_processable_nodes = 0;
+  int num_recognized_nodes = 0;
+  CountRecognizedNodes(&num_processable_nodes, &num_recognized_nodes);
+
   absl::flat_hash_set<int> white_set;
   VLOG(2) << "Beginning pass 1 to add whitelist ops";
   AddWhitelistOps(&white_set);
@@ -1354,16 +1392,19 @@ Status AutoMixedPrecisionImpl::Optimize() {
     LOG(INFO) << "No whitelist ops found, nothing to do";
     return Status::OK();
   }
+  int num_whitelist_nodes = white_set.size();
 
   VLOG(2) << "Beginning pass 2 to propagate black forwards from blacklist ops "
              "through clear/graylist ops";
-  PropagateBlackFwdThroughClearAndGray(&black_set);
+  int num_blacklist_nodes = 0;
+  PropagateBlackFwdThroughClearAndGray(&black_set, &num_blacklist_nodes);
   VLOG(2) << "Finished pass 2";
 
   VLOG(2) << "Forcing color match between data structure ops";
   for (const auto& cluster : tensor_list_clusters) {
     ForceColorMatchBetweenTensorListOps(cluster, &white_set, &black_set);
   }
+  int num_blacklist_affected_nodes = black_set.size() - num_blacklist_nodes;
 
   VLOG(2) << "Beginning pass 3 to set clear and gray nodes to white if they "
              "are between white ops";
@@ -1388,9 +1429,16 @@ Status AutoMixedPrecisionImpl::Optimize() {
 
   VLOG(2) << "Beginning final pass to change type attributes and insert Cast "
              "ops at paint boundaries";
-  TF_RETURN_IF_ERROR(ChangeTypeAttrsAndAddCasts(white_set));
+  int num_nodes_changed = 0;
+  int num_nonvar_casts_to_fp16 = 0;
+  TF_RETURN_IF_ERROR(ChangeTypeAttrsAndAddCasts(white_set, &num_nodes_changed,
+                                                &num_nonvar_casts_to_fp16));
   VLOG(2) << "Finished final pass";
 
+  TF_RETURN_IF_ERROR(PrintSummaryInfo(
+      num_processable_nodes, num_recognized_nodes, num_nodes_changed,
+      num_nonvar_casts_to_fp16, num_whitelist_nodes, num_blacklist_nodes,
+      num_blacklist_affected_nodes));
   TF_RETURN_IF_ERROR(PrintDebugLogs(/* preop = */ false, timestamp));
 
   return Status::OK();
@@ -1525,19 +1573,37 @@ void AutoMixedPrecisionImpl::FindTensorListImplicitFloat32Edges(
   }
 }
 
+void AutoMixedPrecisionImpl::CountRecognizedNodes(
+    int* num_processable_nodes, int* num_recognized_nodes) const {
+  // Count the number of nodes viable for conversion
+  for (int root_idx = 0; root_idx < graph_type_view_.num_nodes(); ++root_idx) {
+    const NodeTypeId& root = *graph_type_view_.GetNode(root_idx);
+    if (!ShouldProcess(*root.node)) continue;
+    ++*num_processable_nodes;
+    if (f16_whitelist_.count(root.node->op()) ||
+        f16_blacklist_.count(root.node->op()) ||
+        f16_graylist_.count(root.node->op())  ||
+        f16_clearlist_.count(root.node->op())) {
+      ++*num_recognized_nodes;
+    }
+  }
+}
+
 void AutoMixedPrecisionImpl::AddWhitelistOps(
     absl::flat_hash_set<int>* white_set) const {
   // Add whitelisted ops to white_set.
+  int num_whitelisted_nodes = 0;
   for (int root_idx = 0; root_idx < graph_type_view_.num_nodes(); ++root_idx) {
     const NodeTypeId& root = *graph_type_view_.GetNode(root_idx);
     if (!ShouldProcess(*root.node)) continue;
     bool force_white = force_all_fp16_ && CanForceFP16(*root.node);
     if (f16_whitelist_.count(root.node->op()) || force_white) {
       bool inserted = white_set->insert(root_idx).second;
-      if (VLOG_IS_ON(2) && inserted) {
+      if (inserted) {
         VLOG(2) << "Painting type " << root.type_attr.DebugString()
                 << " of node " << root.node->name() << " WHITE because its op "
                 << root.node->op() << " is on the whitelist";
+	++num_whitelisted_nodes;
       }
     }
   }
@@ -1549,7 +1615,7 @@ void AutoMixedPrecisionImpl::AddWhitelistOps(
 // E.g., black -> gray -> clear -> gray -> clear -> white -> gray
 // becomes: black -> black -> black -> black -> clear -> white -> gray.
 void AutoMixedPrecisionImpl::PropagateBlackFwdThroughClearAndGray(
-    absl::flat_hash_set<int>* black_set) const {
+    absl::flat_hash_set<int>* black_set, int* num_blacklist_nodes) const {
   if (force_all_fp16_) return;
 
   // Find clear nodes that are upstream of black or gray.
@@ -1560,6 +1626,7 @@ void AutoMixedPrecisionImpl::PropagateBlackFwdThroughClearAndGray(
           f16_graylist_.count(root.node->op()))) {
       continue;
     }
+    if (f16_blacklist_.count(root.node->op())) ++*num_blacklist_nodes;
     DfsTypeTraversal(graph_type_view_, {&root},
                      TypeTraversalDirection::kFollowInputs,
                      DfsTypePredicates::Enter([&](int idx) -> bool {
@@ -1862,9 +1929,8 @@ void AutoMixedPrecisionImpl::MakeCastsWhiteIfAllOutputsWhite(
 // inserts Cast nodes at node outputs for all edges that connect
 // white-painted <-> non-white-painted type attributes.
 Status AutoMixedPrecisionImpl::ChangeTypeAttrsAndAddCasts(
-    const absl::flat_hash_set<int>& white_set) {
-  int num_nodes_changed = 0;
-  int num_nonvar_casts_to_f16 = 0;
+    const absl::flat_hash_set<int>& white_set, int* num_nodes_changed,
+    int* num_nonvar_casts_to_f16) {
   int num_nodes_preop = graph_->node_size();
   for (int node_idx = 0; node_idx < num_nodes_preop; ++node_idx) {
     NodeDef* node = graph_->mutable_node(node_idx);
@@ -1886,7 +1952,7 @@ Status AutoMixedPrecisionImpl::ChangeTypeAttrsAndAddCasts(
         if (!SetDataType(node, type_attr, target_dtype_)) {
           return errors::Internal("Failed to set type attribute");
         }
-        ++num_nodes_changed;
+        ++*num_nodes_changed;
       }
       for (int output_port : node_type_map_.GetOutputPorts(*node, type_attr)) {
         MutableGraphView::OutputPort src(node, output_port);
@@ -1917,7 +1983,7 @@ Status AutoMixedPrecisionImpl::ChangeTypeAttrsAndAddCasts(
                   BuildCastNode(src, to_f16, src.node->device()));
               if (to_f16 && !IsConstant(*node) && !IsVariable(*node) &&
                   !NodeImplicitlyReadsNonResourceVariable(*node)) {
-                ++num_nonvar_casts_to_f16;
+                ++*num_nonvar_casts_to_f16;
               }
             }
             TF_RETURN_IF_ERROR(graph_view_.UpdateRegularFaninByPort(
@@ -1927,13 +1993,6 @@ Status AutoMixedPrecisionImpl::ChangeTypeAttrsAndAddCasts(
       }
     }
   }
-  // Use Python type names (e.g. float16) instead of C++ type names (e.g. half)
-  // since many Python users will see this message.
-  const char* type_str = target_dtype_ == DT_HALF ? "float16" : "bfloat16";
-  LOG(INFO) << "Converted " << num_nodes_changed << "/" << num_nodes_preop
-            << " nodes to " << type_str << " precision using "
-            << num_nonvar_casts_to_f16 << " cast(s) to " << type_str
-            << " (excluding Const and Variable casts)";
   return Status::OK();
 }
 
