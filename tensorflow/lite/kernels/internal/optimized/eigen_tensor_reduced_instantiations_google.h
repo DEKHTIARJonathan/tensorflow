@@ -70,10 +70,6 @@ typedef unsigned __int64 uint64_t;
 #include <time.h>
 #endif
 
-// #if defined(EIGEN_USE_LIBXSMM)
-// #include "libxsmm.h"
-// #endif
-
 #ifdef EIGEN_USE_THREADS
 #include "third_party/eigen3/unsupported/Eigen/CXX11/ThreadPool"
 #endif
@@ -95,7 +91,6 @@ typedef unsigned __int64 uint64_t;
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDeviceDefault.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDeviceThreadPool.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDeviceGpu.h"
-#include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDeviceSycl.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorIndexList.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDimensionList.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDimensions.h"
@@ -107,6 +102,7 @@ typedef unsigned __int64 uint64_t;
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorGlobalFunctions.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorBase.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorBlock.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorBlockV2.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorEvaluator.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorExpr.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h"
@@ -152,7 +148,6 @@ typedef unsigned __int64 uint64_t;
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorAssign.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorScan.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorTrace.h"
-#include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorSycl.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorExecutor.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorDevice.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/src/Tensor/TensorStorage.h"

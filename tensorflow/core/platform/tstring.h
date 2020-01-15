@@ -23,7 +23,20 @@ limitations under the License.
 
 #ifdef USE_TSTRING
 
-#include "absl/strings/string_view.h"
+// The inclusion of absl/strings/string_view.h in tstring.h would preclude the
+// use of tstring in tflite.  Given that, in order to mitigate the forced
+// inclusion of absl/strings/string_view.h while providing convenience methods
+// for implicit conversion, we replace explicit uses of absl::string_view with a
+// forward declaration and associated templates.
+namespace absl {
+class string_view;
+}
+
+#ifdef PLATFORM_GOOGLE
+// TODO(dero): Move above to 'namespace absl' when absl moves Cord out of global
+// namepace.
+class Cord;
+#endif  // PLATFORM_GOOGLE
 
 namespace tensorflow {
 
@@ -41,10 +54,23 @@ namespace tensorflow {
 class tstring {
   std::string str_;
 
- public:
-  tstring() : str_() {}
+  template <typename T, typename = void>
+  struct ResizeUninitialized {
+    static void Resize(T& s, size_t new_size) { s.resize(new_size); }
+  };
 
-  tstring(const tstring& str) : str_(str.str_) {}
+  template <typename T>
+  struct ResizeUninitialized<
+      T, decltype(std::declval<T>().__resize_default_init(0))> {
+    static void Resize(T& s, size_t new_size) {
+      s.__resize_default_init(new_size);
+    }
+  };
+
+ public:
+  tstring() = default;
+
+  tstring(const tstring&) = default;
 
   tstring(const std::string& str) : str_(str) {}
 
@@ -52,21 +78,49 @@ class tstring {
 
   tstring(const char* str) : str_(str) {}
 
-  tstring(const absl::string_view& str) : str_(str.data(), str.size()) {}
+  tstring(size_t n, char c) : str_(n, c) {}
 
-  ~tstring() {}
+  template <typename T,
+            typename std::enable_if<std::is_same<T, absl::string_view>::value,
+                                    T>::type* = nullptr>
+  explicit tstring(const T& str) : str_(str.data(), str.size()) {}
 
-  tstring& operator=(const tstring& str) {
+#ifdef PLATFORM_GOOGLE
+  template <typename T, typename std::enable_if<std::is_same<T, Cord>::value,
+                                                T>::type* = nullptr>
+  explicit tstring(const T& cord) : str_(string(cord)) {}
+#endif  // PLATFORM_GOOGLE
+
+  tstring(tstring&&) noexcept = default;
+
+  ~tstring() = default;
+
+  tstring& operator=(const tstring& str) = default;
+
+  tstring& operator=(const std::string& str) {
     str_ = str;
 
     return *this;
   }
 
-  tstring& operator=(const absl::string_view& str) {
+  template <typename T,
+            typename std::enable_if<std::is_same<T, absl::string_view>::value,
+                                    T>::type* = nullptr>
+  tstring& operator=(const T& str) {
     str_.assign(str.data(), str.size());
 
     return *this;
   }
+
+#ifdef PLATFORM_GOOGLE
+  template <typename T, typename std::enable_if<std::is_same<T, Cord>::value,
+                                                T>::type* = nullptr>
+  tstring& operator=(const T& cord) {
+    str_ = string(cord);
+
+    return *this;
+  }
+#endif  // PLATFORM_GOOGLE
 
   tstring& operator=(const char* str) {
     str_ = str;
@@ -74,17 +128,28 @@ class tstring {
     return *this;
   }
 
+  tstring& operator=(tstring&&) noexcept = default;
+
   bool operator<(const tstring& o) const { return str_ < o.str_; }
 
   bool operator>(const tstring& o) const { return str_ > o.str_; }
 
+  bool operator==(const char* o) const { return str_ == o; }
+
   bool operator==(const tstring& o) const { return str_ == o.str_; }
+
+  bool operator!=(const char* o) const { return str_ != o; }
 
   bool operator!=(const tstring& o) const { return str_ != o.str_; }
 
   operator std::string() const { return str_; }
 
-  operator absl::string_view() const { return absl::string_view(str_); }
+  template <typename T,
+            typename std::enable_if<std::is_same<T, absl::string_view>::value,
+                                    T>::type* = nullptr>
+  operator T() const {
+    return T(str_.data(), str_.size());
+  }
 
   bool empty() const { return str_.empty(); }
 
@@ -92,17 +157,29 @@ class tstring {
 
   size_t size() const { return str_.size(); }
 
+  size_t capacity() const { return str_.capacity(); }
+
   const char* c_str() const { return str_.c_str(); }
 
   const char* data() const { return str_.data(); }
 
+  char back() const { return str_.back(); }
+
   const char& operator[](size_t i) const { return str_[i]; }
 
-  char* data() { return str_.data(); }
+  char* data() { return &str_[0]; }
 
   char& operator[](size_t i) { return str_[i]; }
 
+  void clear() noexcept { str_.clear(); }
+
   void resize(size_t new_size) { str_.resize(new_size); }
+
+  void resize_uninitialized(size_t new_size) {
+    ResizeUninitialized<decltype(str_)>::Resize(str_, new_size);
+  }
+
+  void reserve(size_t n) { str_.reserve(n); }
 
   tstring& assign(const char* str, size_t len) {
     str_.assign(str, len);
@@ -116,10 +193,47 @@ class tstring {
     return *this;
   }
 
+  tstring& append(const tstring& str) {
+    str_.append(str);
+
+    return *this;
+  }
+
+  tstring& append(const char* str, size_t len) {
+    str_.append(str, len);
+
+    return *this;
+  }
+
+  tstring& append(const char* str) {
+    str_.append(str);
+
+    return *this;
+  }
+
+  void swap(tstring& str) { str_.swap(str.str_); }
+
+  tstring& insert(size_t pos, const tstring& str, size_t subpos,
+                  size_t sublen) {
+    str_.insert(pos, str.str_, subpos, sublen);
+
+    return *this;
+  }
+
+  void push_back(char ch) { str_.push_back(ch); }
+
   friend const tstring operator+(const tstring& a, const tstring& b);
+  friend bool operator==(const char* a, const tstring& b);
+  friend bool operator==(const std::string& a, const tstring& b);
   friend std::ostream& operator<<(std::ostream& o, const tstring& str);
   friend std::hash<tstring>;
 };
+
+inline bool operator==(const char* a, const tstring& b) { return a == b.str_; }
+
+inline bool operator==(const std::string& a, const tstring& b) {
+  return a == b.str_;
+}
 
 inline const tstring operator+(const tstring& a, const tstring& b) {
   return tstring(a.str_ + b.str_);

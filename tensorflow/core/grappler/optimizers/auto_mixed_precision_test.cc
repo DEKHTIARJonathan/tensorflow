@@ -85,6 +85,7 @@ class AutoMixedPrecisionTest : public GrapplerTest {
       DeviceProperties device_properties;
       device_properties.set_type("GPU");
       device_properties.mutable_environment()->insert({"architecture", "7"});
+      device_properties.mutable_environment()->insert({"cuda", "9010"});
       virtual_cluster_.reset(
           new VirtualCluster({{"/GPU:1", device_properties}}));
     }
@@ -918,6 +919,55 @@ TEST_F(AutoMixedPrecisionTest, TensorListPushBackBatchAndConcatLists) {
   }
 }
 
+int GetCudaVersion(const Cluster& cluster) {
+  auto devices = cluster.GetDevices();
+  for (const auto& device : devices) {
+    const DeviceProperties& device_properties = device.second;
+    if (device_properties.type() == "GPU") {
+      const auto& device_env = device_properties.environment();
+      auto it = device_env.find("cuda");
+      if (it != device_env.end()) {
+        string cuda_version_str = it->second;
+        return std::stoi(cuda_version_str);
+      }
+    }
+  }
+  return 0;
+}
+
+TEST_F(AutoMixedPrecisionTest, BatchMatMul) {
+  tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+  Output input = ops::Const(s.WithOpName("input"), 1.f / 33, {64, 32, 32});
+  Output wht1 = ops::BatchMatMul(s.WithOpName("wht1"), input, input);
+  Output fetch1 = ops::Identity(s.WithOpName("fetch1"), wht1);
+
+  GrapplerItem item;
+  item.fetch = {"fetch1"};
+  TF_CHECK_OK(s.ToGraphDef(&item.graph));
+  auto tensors_expected = EvaluateNodes(item.graph, item.fetch);
+
+  AutoMixedPrecision optimizer;
+  GraphDef output;
+  TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
+
+  VLOG(1) << output.DebugString();
+
+  GraphView output_view(&output);
+  EXPECT_EQ(output_view.GetNode("input")->attr().at("dtype").type(), DT_FLOAT);
+  if (GetCudaVersion(*virtual_cluster_.get()) >= 9010) {
+    EXPECT_EQ(output.node_size(), item.graph.node_size() + 2);
+    EXPECT_EQ(output_view.GetNode("wht1")->attr().at("T").type(), DT_HALF);
+  } else {
+    EXPECT_EQ(output.node_size(), item.graph.node_size());
+    EXPECT_EQ(output_view.GetNode("wht1")->attr().at("T").type(), DT_FLOAT);
+  }
+
+  auto tensors = EvaluateNodes(output, item.fetch);
+  EXPECT_EQ(tensors.size(), tensors_expected.size());
+  EXPECT_EQ(tensors.size(), item.fetch.size());
+  for (int i = 0; i < item.fetch.size(); ++i) {
+    test::ExpectClose(tensors_expected[i], tensors[i], -1, 3.0e-3);
+  }
 }
 
 TEST_F(AutoMixedPrecisionTest, EluOp) {
@@ -970,7 +1020,7 @@ TEST_F(AutoMixedPrecisionTest, Log1pOp) {
 
 TEST_F(AutoMixedPrecisionTest, LogSoftmaxOp) {
   TestSimpleUnaryGrayOp(
-      -8, 8, -1, 5.0e-3,
+      -8, 8, -1, 1.0e-2,
       [](const tensorflow::Scope& scope, Output input) -> Output {
         return ops::LogSoftmax(scope, input);
       });
@@ -994,7 +1044,7 @@ TEST_F(AutoMixedPrecisionTest, SigmoidOp) {
 
 TEST_F(AutoMixedPrecisionTest, SoftmaxOp) {
   TestSimpleUnaryGrayOp(
-      -8, 8, 1.0e-3, -1,
+      -8, 8, 2.0e-3, -1,
       [](const tensorflow::Scope& scope, Output input) -> Output {
         return ops::Softmax(scope, input);
       });
@@ -1022,6 +1072,8 @@ TEST_F(AutoMixedPrecisionTest, TanhOp) {
       [](const tensorflow::Scope& scope, Output input) -> Output {
         return ops::Tanh(scope, input);
       });
+}
+
 }  // namespace
 }  // namespace grappler
 }  // namespace tensorflow

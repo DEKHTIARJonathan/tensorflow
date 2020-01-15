@@ -310,6 +310,21 @@ cc_library(
     alwayslink = 1,
 )
 
+tf_cc_test(
+    name = "inject_prefetch_test",
+    srcs = ["inject_prefetch_test.cc"],
+    deps = [
+        ":graph_test_utils",
+        ":graph_utils",
+        ":inject_prefetch",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//tensorflow/core/grappler:grappler_item",
+    ],
+)
+
 cc_library(
     name = "latency_all_edges",
     srcs = ["latency_all_edges.cc"],
@@ -707,25 +722,6 @@ tf_cc_test(
         "//tensorflow/core:testlib",
         "//tensorflow/core/grappler:grappler_item",
     ],
-)
-
-cc_library(
-    name = "rebatch",
-    srcs = ["rebatch.cc"],
-    hdrs = ["rebatch.h"],
-    deps = [
-        ":function_utils",
-        ":graph_utils",
-        ":optimizer_base",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "//tensorflow/core:framework",
-        "//tensorflow/core/grappler:grappler_item",
-        "//tensorflow/core/grappler:mutable_graph_view",
-        "//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry",
-        "//tensorflow/core/grappler/utils:functions",
-        "//tensorflow/core:lib",
-    ] + tf_protos_all(),
-    alwayslink = 1,
 )
 
 cc_library(

@@ -19,9 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import itertools
-import os
-import time
-import unittest
 
 from absl.testing import parameterized
 import numpy as np
@@ -63,6 +60,7 @@ def custom_generator(mode=2):
     else:
       yield x, y, w
 
+
 def custom_generator_changing_batch_size(mode=2):
   batch_size = 10
   cur_batch_size = 11
@@ -88,47 +86,14 @@ def custom_generator_changing_batch_size(mode=2):
     else:
       yield x, y, w
 
-
-class ForkRobustTestCase(keras_parameterized.TestCase):
-  _sleep_at_end = False
-
-  def setUp(self):
-    # When setting up a test simply make a best effort to start from a clean
-    # state.
-    self._starting_remnants = data_utils.terminate_keras_multiprocessing_pools(
-        use_sigkill=False)
-
-    self._sleep_at_end = False
-    super(ForkRobustTestCase, self).setUp()
-
-  def tearDown(self):
-    # Give multiprocessing pools some time to finish on their own before
-    # cleanup_all_keras_forkpools yanks the rug out from under them. This is
-    # particularly important because calling .close() on a pool that is already
-    # in the process of spinning down can cause an uncatchable segmentation
-    # fault at which point the tearDown will hang.
-    if self._sleep_at_end:
-      time.sleep(1)
-
-    # If a test finishes and leaves behind uncleanable artifacts then that is a
-    # failure condition. However, if the state was not clean to begin with the
-    # test should not fail on that account.
-    new_remnants = set(data_utils.terminate_keras_multiprocessing_pools(
-        use_sigkill=True)).difference(self._starting_remnants)
-
-    if new_remnants:
-      raise ValueError('Test left behind stubborn orphans:\n  {}'.format(
-          '\n  '.join(new_remnants)))
-    super(ForkRobustTestCase, self).tearDown()
+custom_generator_threads = data_utils.threadsafe_generator(custom_generator)
 
 
-class TestGeneratorMethods(ForkRobustTestCase):
+class TestGeneratorMethods(keras_parameterized.TestCase):
 
-  @unittest.skipIf(
-      os.name == 'nt',
-      'use_multiprocessing=True does not work on windows properly.')
   @keras_parameterized.run_with_all_model_types
   @keras_parameterized.run_all_keras_modes
+  @data_utils.dont_use_multiprocessing_pool
   def test_fit_generator_method(self):
     model = testing_utils.get_small_mlp(
         num_hidden=3, num_classes=4, input_dim=2)
@@ -137,8 +102,7 @@ class TestGeneratorMethods(ForkRobustTestCase):
         optimizer=rmsprop.RMSprop(1e-3),
         metrics=['mae', metrics_module.CategoricalAccuracy()])
 
-    self._sleep_at_end = True
-    model.fit_generator(custom_generator(),
+    model.fit_generator(custom_generator_threads(),
                         steps_per_epoch=5,
                         epochs=1,
                         verbose=1,
@@ -165,11 +129,9 @@ class TestGeneratorMethods(ForkRobustTestCase):
                         validation_steps=1,
                         workers=0)
 
-  @unittest.skipIf(
-      os.name == 'nt',
-      'use_multiprocessing=True does not work on windows properly.')
   @keras_parameterized.run_with_all_model_types
   @keras_parameterized.run_all_keras_modes
+  @data_utils.dont_use_multiprocessing_pool
   def test_evaluate_generator_method(self):
     model = testing_utils.get_small_mlp(
         num_hidden=3, num_classes=4, input_dim=2)
@@ -180,8 +142,7 @@ class TestGeneratorMethods(ForkRobustTestCase):
         run_eagerly=testing_utils.should_run_eagerly(),
         experimental_run_tf_function=testing_utils.should_run_tf_function())
 
-    self._sleep_at_end = True
-    model.evaluate_generator(custom_generator(),
+    model.evaluate_generator(custom_generator_threads(),
                              steps=5,
                              max_queue_size=10,
                              workers=2,
@@ -197,19 +158,16 @@ class TestGeneratorMethods(ForkRobustTestCase):
                              use_multiprocessing=False,
                              workers=0)
 
-  @unittest.skipIf(
-      os.name == 'nt',
-      'use_multiprocessing=True does not work on windows properly.')
   @keras_parameterized.run_with_all_model_types
   @keras_parameterized.run_all_keras_modes
+  @data_utils.dont_use_multiprocessing_pool
   def test_predict_generator_method(self):
     model = testing_utils.get_small_mlp(
         num_hidden=3, num_classes=4, input_dim=2)
     model.run_eagerly = testing_utils.should_run_eagerly()
     model._experimental_run_tf_function = testing_utils.should_run_tf_function()
 
-    self._sleep_at_end = True
-    model.predict_generator(custom_generator(),
+    model.predict_generator(custom_generator_threads(),
                             steps=5,
                             max_queue_size=10,
                             workers=2,
@@ -223,7 +181,7 @@ class TestGeneratorMethods(ForkRobustTestCase):
                             max_queue_size=10,
                             workers=0)
     # Test generator with just inputs (no targets)
-    model.predict_generator(custom_generator(mode=1),
+    model.predict_generator(custom_generator_threads(mode=1),
                             steps=5,
                             max_queue_size=10,
                             workers=2,
@@ -451,13 +409,14 @@ class TestGeneratorMethods(ForkRobustTestCase):
     model.fit(data_gen(), epochs=1, steps_per_epoch=5)
 
 
-class TestGeneratorMethodsWithSequences(ForkRobustTestCase):
+class TestGeneratorMethodsWithSequences(keras_parameterized.TestCase):
 
   @keras_parameterized.run_with_all_model_types
   @keras_parameterized.run_all_keras_modes
+  @data_utils.dont_use_multiprocessing_pool
   def test_training_with_sequences(self):
 
-    class DummySequence(keras.utils.Sequence):
+    class DummySequence(data_utils.Sequence):
 
       def __getitem__(self, idx):
         return np.zeros([10, 2]), np.ones([10, 4])
@@ -486,10 +445,11 @@ class TestGeneratorMethodsWithSequences(ForkRobustTestCase):
 
   @keras_parameterized.run_with_all_model_types
   @keras_parameterized.run_all_keras_modes
+  @data_utils.dont_use_multiprocessing_pool
   def test_sequence_input_to_fit_eval_predict(self):
     val_data = np.ones([10, 10], np.float32), np.ones([10, 1], np.float32)
 
-    class CustomSequence(keras.utils.Sequence):
+    class CustomSequence(data_utils.Sequence):
 
       def __getitem__(self, idx):
         return np.ones([10, 10], np.float32), np.ones([10, 1], np.float32)
@@ -497,7 +457,7 @@ class TestGeneratorMethodsWithSequences(ForkRobustTestCase):
       def __len__(self):
         return 2
 
-    class CustomSequenceChangingBatchSize(keras.utils.Sequence):
+    class CustomSequenceChangingBatchSize(data_utils.Sequence):
 
       def __getitem__(self, idx):
         batch_size = 10 - idx

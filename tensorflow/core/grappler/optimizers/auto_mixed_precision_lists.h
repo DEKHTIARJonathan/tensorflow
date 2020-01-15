@@ -20,11 +20,6 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/util/env_var.h"
 
-#if GOOGLE_CUDA
-// Needed for CUDA_VERSION macro.
-#include "third_party/gpus/cuda/include/cuda.h"
-#endif  // GOOGLE_CUDA
-
 namespace tensorflow {
 namespace grappler {
 
@@ -52,7 +47,7 @@ class AutoMixedPrecisionLists {
  public:
   // Returns the set of ops that are considered numerically-safe (for execution
   // in fp16) and performance-critical. These ops are always converted to fp16.
-  static gtl::FlatSet<string> WhiteList() {
+  static gtl::FlatSet<string> WhiteList(int cuda_version, int cudnn_version) {
     string to_add, to_remove;
     TF_CHECK_OK(ReadStringFromEnvVar(
         "TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_WHITELIST_ADD", "", &to_add));
@@ -60,27 +55,44 @@ class AutoMixedPrecisionLists {
         "TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_WHITELIST_REMOVE", "",
         &to_remove));
 
-    auto list = gtl::FlatSet<string> {
-#if CUDA_VERSION >= 9010  // Fp16 BatchMatMul is slow before CUDA 9.1.
-      "BatchMatMul", "BatchMatMulV2",
-#endif
-          "BlockLSTM", "BlockLSTMGrad", "Conv2D", "Conv2DBackpropFilter",
-          "Conv2DBackpropInput",
-          "Conv3D",
-          "Conv3DBackpropFilter",
-          "Conv3DBackpropFilterV2",
-          "Conv3DBackpropInput",
-          "Conv3DBackpropInputV2",
-          "CudnnRNN", "CudnnRNNBackprop", "CudnnRNNBackpropV2",
-          "CudnnRNNBackpropV3", "CudnnRNNV2", "CudnnRNNV3", "GRUBlockCell",
-          "GRUBlockCellGrad", "LSTMBlockCell", "LSTMBlockCellGrad",
-          // TODO(benbarsdell): Enable these when fast and safe fp16 kernels are
-          // available for depthwise convolutions.
-          // "DepthwiseConv2dNative",
-          // "DepthwiseConv2dNativeBackpropFilter",
-          // "DepthwiseConv2dNativeBackpropInput",
-          "MatMul",
+    auto list = gtl::FlatSet<string>{
+        "BlockLSTM",
+        "BlockLSTMV2",
+        "BlockLSTMGrad",
+        "BlockLSTMGradV2",
+        "Conv2D",
+        "Conv2DBackpropFilter",
+        "Conv2DBackpropInput",
+        "CudnnRNN",
+        "CudnnRNNBackprop",
+        "CudnnRNNBackpropV2",
+        "CudnnRNNBackpropV3",
+        "CudnnRNNV2",
+        "CudnnRNNV3",
+        "GRUBlockCell",
+        "GRUBlockCellGrad",
+        "LSTMBlockCell",
+        "LSTMBlockCellGrad",
+        // TODO(benbarsdell): Enable these when fast and safe fp16 kernels are
+        // available for depthwise convolutions.
+        // "DepthwiseConv2dNative",
+        // "DepthwiseConv2dNativeBackpropFilter",
+        // "DepthwiseConv2dNativeBackpropInput",
+        "MatMul",
     };
+    if (cuda_version >= 9010) {
+      // Fp16 BatchMatMul is slow before CUDA 9.1.
+      list.insert("BatchMatMul");
+      list.insert("BatchMatMulV2");
+    }
+    if (cudnn_version >= 7602) {
+      // Fp16 3D conv is slow before CUDNN 7.6.2.
+      list.insert("Conv3D");
+      list.insert("Conv3DBackpropFilter");
+      list.insert("Conv3DBackpropFilterV2");
+      list.insert("Conv3DBackpropInput");
+      list.insert("Conv3DBackpropInputV2");
+    }
     UpdateList(&list, to_add, to_remove);
     return list;
   }
@@ -118,6 +130,7 @@ class AutoMixedPrecisionLists {
         "FusedBatchNormGradV2",
         "FusedBatchNormV3",
         "FusedBatchNormGradV3",
+        "_FusedBatchNormEx",
         "Inv",
         "LeakyRelu",
         "LeakyReluGrad",
@@ -128,11 +141,15 @@ class AutoMixedPrecisionLists {
         "Prod",
         "RealDiv",
         "Reciprocal",
+        "Selu",
+        "SeluGrad",
         "Sigmoid",
         "SigmoidGrad",
         "Softmax",
         "Softplus",
         "SoftplusGrad",
+        "Softsign",
+        "SoftsignGrad",
         "Sqrt",
         "Sub",
         "Tanh",
@@ -259,6 +276,7 @@ class AutoMixedPrecisionLists {
         "ReverseV2",
         "Round",
         "Select",
+        "SelectV2",
         "Shape",
         "ShapeN",
         "Sign",

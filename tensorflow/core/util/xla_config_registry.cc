@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tensorflow/core/util/xla_config_registry.h"
 
+#include "tensorflow/core/platform/logging.h"
+
 namespace tensorflow {
 
 namespace xla_config_registry {
@@ -29,7 +31,7 @@ GlobalJitLevelState* GetSingletonState() {
   static GlobalJitLevelState* state = new GlobalJitLevelState;
   return state;
 }
-}  // anonymous
+}  // namespace
 
 void RegisterGlobalJitLevelGetter(GlobalJitLevelGetterTy getter) {
   GlobalJitLevelState* state = GetSingletonState();

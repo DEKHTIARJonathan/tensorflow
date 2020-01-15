@@ -43,7 +43,11 @@ class IteratorResource : public ResourceBase {
         iterator_state_(std::make_shared<State>(
             std::move(flib_def), std::move(pflr), flr, /*iterator=*/nullptr)),
         output_dtypes_(output_dtypes),
-        output_shapes_(output_shapes) {}
+        output_shapes_(output_shapes) {
+    VLOG(2) << "constructor";
+  }
+
+  ~IteratorResource() override { VLOG(2) << "destructor"; }
 
   Status GetNext(OpKernelContext* ctx, std::vector<Tensor>* out_tensors,
                  bool* end_of_sequence);
@@ -72,6 +76,8 @@ class IteratorResource : public ResourceBase {
           pflr(pflr),
           function_handle_cache(absl::make_unique<FunctionHandleCache>(flr)),
           iterator(std::move(iterator)) {}
+
+    ~State() { cancellation_manager.StartCancel(); }
 
     std::shared_ptr<FunctionLibraryDefinition> flib_def;
     FunctionLibraryRuntime* flr = nullptr;  // not owned.

@@ -1,5 +1,3 @@
-# -*- Python -*-
-
 # Return the options to use for a C++ library or binary build.
 # Uses the ":optmode" config_setting to pick the options.
 load(
@@ -8,7 +6,6 @@ load(
     "if_static",
     "tf_additional_grpc_deps_py",
     "tf_additional_xla_deps_py",
-    "tf_cuda_tests_tags",
     "tf_exec_compatible_with",
     "tf_gpu_tests_tags",
     "tf_sycl_tests_tags",
@@ -31,7 +28,6 @@ load(
     "if_rocm",
     "if_rocm_is_configured",
     "rocm_copts",
-    "rocm_default_copts",
 )
 load(
     "//third_party/mkl:build_defs.bzl",
@@ -58,7 +54,7 @@ def register_extension_info(**kwargs):
 # not contain rc or alpha, only numbers.
 # Also update tensorflow/core/public/version.h
 # and tensorflow/tools/pip_package/setup.py
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 VERSION_MAJOR = VERSION.split(".")[0]
 
 def if_v2(a):
@@ -71,6 +67,12 @@ def if_not_v2(a):
     return select({
         clean_dep("//tensorflow:api_version_2"): [],
         "//conditions:default": a,
+    })
+
+def if_nvcc(a):
+    return select({
+        "@local_config_cuda//cuda:using_nvcc": a,
+        "//conditions:default": [],
     })
 
 def if_cuda_is_configured_compat(x):
@@ -238,11 +240,11 @@ def if_override_eigen_strong_inline(a):
         "//conditions:default": [],
     })
 
-def if_nccl(a):
+def if_nccl(if_true, if_false = []):
     return select({
-        "//tensorflow:no_nccl_support": [],
-        "//tensorflow:windows": [],
-        "//conditions:default": a,
+        "//tensorflow:no_nccl_support": if_false,
+        "//tensorflow:windows": if_false,
+        "//conditions:default": if_true,
     })
 
 def get_win_copts(is_external = False):
@@ -261,14 +263,18 @@ def get_win_copts(is_external = False):
         # "/EHs-c-",
         "/wd4577",
         "/DNOGDI",
+        # Also see build:windows lines in tensorflow/opensource_only/.bazelrc
+        # where we set some other options globally.
     ]
     if is_external:
         return WINDOWS_COPTS + ["/UTF_COMPILE_LIBRARY"]
     else:
         return WINDOWS_COPTS + ["/DTF_COMPILE_LIBRARY"]
 
-# LINT.IfChange
-def tf_copts(android_optimization_level_override = "-O2", is_external = False):
+def tf_copts(
+        android_optimization_level_override = "-O2",
+        is_external = False,
+        allow_exceptions = False):
     # For compatibility reasons, android_optimization_level_override
     # is currently only being set for Android.
     # To clear this value, and allow the CROSSTOOL default
@@ -285,10 +291,11 @@ def tf_copts(android_optimization_level_override = "-O2", is_external = False):
             "-DEIGEN_AVOID_STL_ARRAY",
             "-Iexternal/gemmlowp",
             "-Wno-sign-compare",
-            "-fno-exceptions",
             "-ftemplate-depth=900",
         ]) +
+        (if_not_windows(["-fno-exceptions"]) if not allow_exceptions else []) +
         if_cuda(["-DGOOGLE_CUDA=1"]) +
+        if_nvcc(["-DTENSORFLOW_USE_NVCC=1"]) +
         if_tensorrt(["-DGOOGLE_TENSORRT=1"]) +
         if_nccl(["-DGOOGLE_NCCL=1"]) +
         if_mkl(["-DINTEL_MKL=1", "-DEIGEN_USE_VML"]) +
@@ -328,8 +335,6 @@ def tf_opts_nortti_if_android():
         "-DGOOGLE_PROTOBUF_NO_RTTI",
         "-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER",
     ])
-
-# LINT.ThenChange(//tensorflow/contrib/android/cmake/CMakeLists.txt)
 
 def tf_opts_nortti_if_emscripten():
     return if_emscripten([
@@ -424,9 +429,21 @@ def tf_binary_additional_data_deps():
 
 def tf_binary_pybind_deps():
     return select({
-        clean_dep("//tensorflow:macos"): [clean_dep("//tensorflow/python:lib_pywrap_tensorflow_internal.dylib")],
-        clean_dep("//tensorflow:windows"): [clean_dep("//tensorflow/python:_pywrap_tensorflow_internal.dll")],
-        "//conditions:default": [clean_dep("//tensorflow/python:lib_pywrap_tensorflow_internal.so")],
+        clean_dep("//tensorflow:macos"): [
+            clean_dep(
+                "//tensorflow/python:_pywrap_tensorflow_internal_macos",
+            ),
+        ],
+        clean_dep("//tensorflow:windows"): [
+            clean_dep(
+                "//tensorflow/python:_pywrap_tensorflow_internal_windows",
+            ),
+        ],
+        "//conditions:default": [
+            clean_dep(
+                "//tensorflow/python:_pywrap_tensorflow_internal_linux",
+            ),
+        ],
     })
 
 # Helper function for the per-OS tensorflow libraries and their version symlinks
@@ -611,6 +628,11 @@ def tf_cc_binary(
             deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(
                 [
                     clean_dep("//third_party/mkl:intel_binary_blob"),
+                ],
+            ) + if_static(
+                extra_deps = [],
+                otherwise = [
+                    clean_dep("//tensorflow:libtensorflow_framework_import_lib"),
                 ],
             ),
             data = depset(data + added_data_deps),
@@ -830,7 +852,7 @@ def tf_gen_op_wrappers_cc(
 #   deps: list of dependencies for the intermediate tool used to generate the
 #     python target. NOTE these `deps` are not applied to the final python
 #     library target itself.
-#   require_shape_functions: leave this as False.
+#   require_shape_functions: Unused. Leave this as False.
 #   hidden_file: optional file that contains a list of op names to make private
 #     in the generated Python module. Each op name should be on a line by
 #     itself. Lines that start with characters that are invalid op name
@@ -854,6 +876,8 @@ def tf_gen_op_wrapper_py(
         op_whitelist = [],
         cc_linkopts = [],
         api_def_srcs = []):
+    _ = require_shape_functions  # Unused.
+
     if (hidden or hidden_file) and op_whitelist:
         fail("Cannot pass specify both hidden and op_whitelist.")
 
@@ -911,8 +935,7 @@ def tf_gen_op_wrapper_py(
             srcs = api_def_srcs + [hidden_file],
             tools = [tool_name] + tf_binary_additional_srcs(),
             cmd = ("$(location " + tool_name + ") " + api_def_args_str +
-                   " @$(location " + hidden_file + ") " +
-                   ("1" if require_shape_functions else "0") + " > $@"),
+                   " @$(location " + hidden_file + ") > $@"),
         )
     else:
         native.genrule(
@@ -922,7 +945,6 @@ def tf_gen_op_wrapper_py(
             tools = [tool_name] + tf_binary_additional_srcs(),
             cmd = ("$(location " + tool_name + ") " + api_def_args_str + " " +
                    op_list_arg + " " +
-                   ("1" if require_shape_functions else "0") + " " +
                    ("1" if op_list_is_whitelist else "0") + " > $@"),
         )
 
@@ -961,7 +983,6 @@ def tf_cc_test(
         extra_copts = [],
         suffix = "",
         linkopts = [],
-        nocopts = None,
         kernels = [],
         **kwargs):
     native.cc_test(
@@ -1000,7 +1021,6 @@ def tf_cc_test(
             clean_dep("//tensorflow:macos"): 1,
             "//conditions:default": 0,
         }),
-        nocopts = nocopts,
         **kwargs
     )
 
@@ -1164,8 +1184,7 @@ def tf_cc_tests(
         size = "medium",
         args = None,
         linkopts = [],
-        kernels = [],
-        nocopts = None):
+        kernels = []):
     for src in srcs:
         tf_cc_test(
             name = src_to_test_name(src),
@@ -1175,7 +1194,6 @@ def tf_cc_tests(
             kernels = kernels,
             linkopts = linkopts,
             linkstatic = linkstatic,
-            nocopts = nocopts,
             tags = tags,
             deps = deps,
         )
@@ -1197,7 +1215,7 @@ def tf_cc_test_mkl(
         native.cc_test(
             name = src_to_test_name(src),
             srcs = if_mkl([src]) + tf_binary_additional_srcs(),
-            copts = tf_copts() + tf_openmp_copts(),
+            copts = tf_copts(allow_exceptions = True) + tf_openmp_copts(),
             linkopts = select({
                 clean_dep("//tensorflow:android"): [
                     "-pie",
@@ -1216,7 +1234,6 @@ def tf_cc_test_mkl(
             size = size,
             args = args,
             features = disable_header_modules,
-            nocopts = "-fno-exceptions",
         )
 
 def tf_cc_tests_gpu(
@@ -1495,7 +1512,7 @@ def tf_kernel_library(
 
 register_extension_info(
     extension_name = "tf_kernel_library",
-    label_regex_for_dep = "{extension_name}(_gpu)?",
+    label_regex_for_dep = "({extension_name}(_gpu)?|libtfkernel_{extension_name}\\.so)",
 )
 
 def tf_mkl_kernel_library(
@@ -1505,8 +1522,7 @@ def tf_mkl_kernel_library(
         hdrs = None,
         deps = None,
         alwayslink = 1,
-        copts = tf_copts() + tf_openmp_copts(),
-        nocopts = "-fno-exceptions"):
+        copts = tf_copts(allow_exceptions = True) + tf_openmp_copts()):
     """A rule to build MKL-based TensorFlow kernel libraries."""
 
     if not bool(srcs):
@@ -1534,7 +1550,6 @@ def tf_mkl_kernel_library(
         deps = deps,
         alwayslink = alwayslink,
         copts = copts,
-        nocopts = nocopts,
         features = disable_header_modules,
     )
 
@@ -2100,6 +2115,7 @@ def tf_py_test(
         additional_deps = additional_deps + tf_additional_grpc_deps_py()
 
     # Python version placeholder
+    kwargs.setdefault("srcs_version", "PY2AND3")
     py_test(
         name = name,
         size = size,
@@ -2110,7 +2126,6 @@ def tf_py_test(
         kernels = kernels,
         main = main,
         shard_count = shard_count,
-        srcs_version = "PY2AND3",
         tags = tags,
         visibility = [clean_dep("//tensorflow:internal")] +
                      additional_visibility,
@@ -2325,38 +2340,39 @@ def tf_generate_proto_text_sources(name, srcs_relative_dir, srcs, protodeps = []
         hdrs = out_hdrs,
         visibility = visibility,
         deps = deps,
+        alwayslink = 1,
     )
 
 def tf_genrule_cmd_append_to_srcs(to_append):
     return ("cat $(SRCS) > $(@) && " + "echo >> $(@) && " + "echo " + to_append +
             " >> $(@)")
 
-def tf_version_info_genrule():
+def tf_version_info_genrule(name, out):
     native.genrule(
-        name = "version_info_gen",
+        name = name,
         srcs = [
             clean_dep("@local_config_git//:gen/spec.json"),
             clean_dep("@local_config_git//:gen/head"),
             clean_dep("@local_config_git//:gen/branch_ref"),
         ],
-        outs = ["util/version_info.cc"],
+        outs = [out],
         cmd =
             "$(location //tensorflow/tools/git:gen_git_source) --generate $(SRCS) \"$@\" --git_tag_override=$${GIT_TAG_OVERRIDE:-}",
         local = 1,
         tools = [clean_dep("//tensorflow/tools/git:gen_git_source")],
     )
 
-def tf_py_build_info_genrule():
+def tf_py_build_info_genrule(name, out, **kwargs):
     native.genrule(
-        name = "py_build_info_gen",
-        outs = ["platform/build_info.py"],
+        name = name,
+        outs = [out],
         cmd =
             "$(location //tensorflow/tools/build_info:gen_build_info) --raw_generate \"$@\" " +
             " --is_config_cuda " + if_cuda("True", "False") +
             " --is_config_rocm " + if_rocm("True", "False") +
             " --key_value " +
             if_cuda(" cuda_version_number=$${TF_CUDA_VERSION:-} cudnn_version_number=$${TF_CUDNN_VERSION:-} ", "") +
-            if_windows(" msvcp_dll_name=msvcp140.dll ", "") +
+            if_windows(" msvcp_dll_names=msvcp140.dll,msvcp140_1.dll ", "") +
             if_windows_cuda(" ".join([
                 "nvcuda_dll_name=nvcuda.dll",
                 "cudart_dll_name=cudart64_$$(echo $${TF_CUDA_VERSION:-} | sed \"s/\\.//\").dll",
@@ -2364,6 +2380,7 @@ def tf_py_build_info_genrule():
             ]), ""),
         local = 1,
         tools = [clean_dep("//tensorflow/tools/build_info:gen_build_info")],
+        **kwargs
     )
 
 def cc_library_with_android_deps(
@@ -2383,7 +2400,8 @@ register_extension_info(
 def tensorflow_opensource_extra_deps():
     return []
 
-def tf_pybind_extension(
+# buildozer: disable=function-docstring-args
+def pybind_extension(
         name,
         srcs,
         module_name,
@@ -2391,8 +2409,7 @@ def tf_pybind_extension(
         features = [],
         srcs_version = "PY2AND3",
         data = [],
-        copts = None,
-        nocopts = None,
+        copts = [],
         linkopts = [],
         deps = [],
         visibility = None,
@@ -2401,7 +2418,7 @@ def tf_pybind_extension(
         compatible_with = None,
         restricted_to = None,
         deprecation = None):
-    """Builds a Python extension module."""
+    """Builds a generic Python extension module."""
     _ignore = [module_name]
     p = name.rfind("/")
     if p == -1:
@@ -2438,8 +2455,14 @@ def tf_pybind_extension(
         name = so_file,
         srcs = srcs + hdrs,
         data = data,
-        copts = copts,
-        nocopts = nocopts,
+        copts = copts + [
+            "-fexceptions",
+        ] + select({
+            clean_dep("//tensorflow:windows"): [],
+            "//conditions:default": [
+                "-fvisibility=hidden",
+            ],
+        }),
         linkopts = linkopts + _rpath_linkopts(name) + select({
             "@local_config_cuda//cuda:darwin": [
                 "-Wl,-exported_symbols_list,$(location %s)" % exported_symbols_file,
@@ -2454,7 +2477,7 @@ def tf_pybind_extension(
             exported_symbols_file,
             version_script_file,
         ],
-        features = features,
+        features = features + ["-use_header_modules"],
         linkshared = 1,
         testonly = testonly,
         licenses = licenses,
@@ -2487,6 +2510,31 @@ def tf_pybind_extension(
         deprecation = deprecation,
         restricted_to = restricted_to,
         compatible_with = compatible_with,
+    )
+
+# buildozer: enable=function-docstring-args
+
+def tf_python_pybind_extension(
+        name,
+        srcs,
+        module_name,
+        features = [],
+        copts = [],
+        hdrs = [],
+        deps = []):
+    """A wrapper macro for pybind_extension that is used in tensorflow/python/BUILD.
+
+    It is used for targets under //third_party/tensorflow/python that link
+    against libtensorflow_framework.so and pywrap_tensorflow_internal.so.
+    """
+    pybind_extension(
+        name,
+        srcs + tf_binary_additional_srcs(),
+        module_name,
+        features = features,
+        copts = copts,
+        hdrs = hdrs,
+        deps = deps + tf_binary_pybind_deps() + mkl_deps(),
     )
 
 def if_cuda_or_rocm(if_true, if_false = []):
@@ -2527,10 +2575,6 @@ def if_mlir(if_true, if_false = []):
         "//conditions:default": if_false,
         "//tensorflow:with_mlir_support": if_true,
     })
-
-# TODO(b/138724071): Remove when build is stable.
-def if_mlir_tflite(if_true, if_false = []):
-    return if_mlir(if_true, if_false)
 
 def tfcompile_extra_flags():
     return ""

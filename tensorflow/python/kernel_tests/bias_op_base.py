@@ -36,8 +36,8 @@ class BiasAddTestBase(test.TestCase):
   def _npBias(self, inputs, bias):
     assert len(bias.shape) == 1
     assert inputs.shape[-1] == bias.shape[0]
-    return inputs + bias.reshape(([1] * (len(inputs.shape) - 1)) +
-                                 [bias.shape[0]])
+    return inputs + bias.reshape(([1] *
+                                  (len(inputs.shape) - 1)) + [bias.shape[0]])
 
   def testNpBias(self):
     self.assertAllClose(
@@ -83,10 +83,9 @@ class BiasAddTestBase(test.TestCase):
   def _testAll(self, np_inputs, np_bias):
     self._testBias(np_inputs, np_bias, use_gpu=False)
     self._testBiasNCHW(np_inputs, np_bias, use_gpu=False)
-    if np_inputs.dtype in [np.float16, np.float32, np.float64]:
+    if np_inputs.dtype in [np.float16, np.float32, np.float64, np.int32]:
       self._testBias(np_inputs, np_bias, use_gpu=True)
       self._testBiasNCHW(np_inputs, np_bias, use_gpu=True)
-
 
   @test_util.run_deprecated_v1
   def testInputDims(self):
@@ -97,19 +96,15 @@ class BiasAddTestBase(test.TestCase):
   def testBiasVec(self):
     with self.assertRaises(ValueError):
       nn_ops.bias_add(
-          array_ops.reshape(
-              [1, 2], shape=[1, 2]),
-          array_ops.reshape(
-              [1, 2], shape=[1, 2]))
+          array_ops.reshape([1, 2], shape=[1, 2]),
+          array_ops.reshape([1, 2], shape=[1, 2]))
 
   @test_util.run_deprecated_v1
   def testBiasInputsMatch(self):
     with self.assertRaises(ValueError):
       nn_ops.bias_add(
-          array_ops.reshape(
-              [1, 2], shape=[1, 2]),
-          array_ops.reshape(
-              [1], shape=[1]))
+          array_ops.reshape([1, 2], shape=[1, 2]),
+          array_ops.reshape([1], shape=[1]))
 
   @test_util.run_deprecated_v1
   def testIntTypes(self):
@@ -122,7 +117,8 @@ class BiasAddTestBase(test.TestCase):
   def testFloatTypes(self):
     for t in [np.float16, np.float32, np.float64]:
       self._testAll(
-          np.random.rand(4, 3, 3).astype(t), np.random.rand(3).astype(t))
+          np.random.rand(4, 3, 3).astype(t),
+          np.random.rand(3).astype(t))
 
   @test_util.run_deprecated_v1
   def test4DFloatTypes(self):
@@ -176,21 +172,15 @@ class BiasAddTestBase(test.TestCase):
             bias, shape=bias.shape, dtype=np.float32)
         output_tensor = nn_ops.bias_add(
             input_tensor, bias_tensor, data_format=data_format)
-        _, tensor_jacob_n = gradient_checker.compute_gradient(input_tensor,
-                                                              np_input.shape,
-                                                              output_tensor,
-                                                              np_input.shape)
-        _, bias_jacob_n = gradient_checker.compute_gradient(bias_tensor,
-                                                            bias.shape,
-                                                            output_tensor,
-                                                            np_input.shape)
+        _, tensor_jacob_n = gradient_checker.compute_gradient(
+            input_tensor, np_input.shape, output_tensor, np_input.shape)
+        _, bias_jacob_n = gradient_checker.compute_gradient(
+            bias_tensor, bias.shape, output_tensor, np_input.shape)
 
         bias_add_grad = gradients_impl.gradients(
             nn_ops.l2_loss(output_tensor), bias_tensor)[0]
-        _, grad_jacob_n = gradient_checker.compute_gradient(output_tensor,
-                                                            np_input.shape,
-                                                            bias_add_grad,
-                                                            bias.shape)
+        _, grad_jacob_n = gradient_checker.compute_gradient(
+            output_tensor, np_input.shape, bias_add_grad, bias.shape)
 
       threshold = 5e-3
       if dtype == dtypes.float64:
@@ -203,9 +193,8 @@ class BiasAddTestBase(test.TestCase):
   def testGradientTensor2D(self):
     for (data_format, use_gpu) in ("NHWC", False), ("NHWC", True):
       for dtype in (dtypes.float16, dtypes.float32, dtypes.float64):
-        np_input = np.array(
-            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            dtype=dtype.as_numpy_dtype).reshape(3, 2)
+        np_input = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                            dtype=dtype.as_numpy_dtype).reshape(3, 2)
         bias = np.array([1.3, 2.4], dtype=dtype.as_numpy_dtype)
         self._testGradient(np_input, bias, dtype, data_format, use_gpu)
 
@@ -271,5 +260,5 @@ class BiasAddTestBase(test.TestCase):
                                    ("NCHW", False), ("NCHW", True)]:
       for shape in (4, 3, 0), (4, 0, 3), (0, 4, 3):
         self._testGradient(
-            np.random.randn(*shape),
-            np.random.randn(shape[-1]), dtypes.float64, data_format, use_gpu)
+            np.random.randn(*shape), np.random.randn(shape[-1]), dtypes.float64,
+            data_format, use_gpu)

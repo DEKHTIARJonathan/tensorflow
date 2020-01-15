@@ -42,7 +42,6 @@ limitations under the License.
 #include "tensorflow/core/lib/core/stringpiece.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
-#include "tensorflow/core/lib/gtl/stl_util.h"
 #include "tensorflow/core/lib/monitoring/counter.h"
 #include "tensorflow/core/lib/monitoring/gauge.h"
 #include "tensorflow/core/lib/monitoring/sampler.h"
@@ -58,12 +57,15 @@ struct TFE_ContextOptions {
   TFE_ContextDevicePlacementPolicy device_placement_policy{
       TFE_DEVICE_PLACEMENT_SILENT};
   TFE_ContextMirroringPolicy mirroring_policy{TFE_MIRRORING_NONE};
+  // If true, lazily copy the remote inputs of a function to the target devices.
+  bool lazy_remote_inputs_copy = false;
 };
 
 struct TFE_Context {
   TFE_Context(const tensorflow::SessionOptions& opts,
               TFE_ContextDevicePlacementPolicy default_device_placement_policy,
               TFE_ContextMirroringPolicy default_mirroring_policy, bool async,
+              const bool lazy_remote_inputs_copy,
               const tensorflow::DeviceMgr* device_mgr, bool device_mgr_owned,
               tensorflow::Rendezvous* rendezvous,
               const tensorflow::CustomKernelCreator* custom_kernel_creator)
@@ -73,8 +75,8 @@ struct TFE_Context {
                 default_device_placement_policy),
             static_cast<tensorflow::ContextMirroringPolicy>(
                 default_mirroring_policy),
-            async, device_mgr, device_mgr_owned, rendezvous,
-            custom_kernel_creator)) {}
+            async, lazy_remote_inputs_copy, device_mgr, device_mgr_owned,
+            rendezvous, custom_kernel_creator)) {}
 
   ~TFE_Context() {
     // TODO(iga): Add a separate API method to shutdown TFE_Context so that we
@@ -133,9 +135,24 @@ struct TFE_Op {
       : operation(ctx->context, op, is_function, t),
         inference_ctx(inference_ctx) {}
 
+  void Clear() {
+    operation.Clear();
+    inference_ctx.reset();
+  }
+
+  void Reset(TFE_Context* ctx, const char* op, bool is_function,
+             const tensorflow::AttrTypeMap* t,
+             TFE_OpInferenceContext* infer_ctx) {
+    operation.Reset(ctx->context, op, is_function, t, nullptr);
+    inference_ctx.reset(infer_ctx);
+  }
+
   tensorflow::EagerOperation operation;
   std::unique_ptr<TFE_OpInferenceContext> inference_ctx;
 };
+
+TFE_Op* NewOrResetOp(TFE_Context* ctx, const char* op_or_function_name,
+                     TF_Status* status, TFE_Op* op_to_reset = nullptr);
 
 struct TFE_Profiler {
   explicit TFE_Profiler() { profiler = tensorflow::ProfilerSession::Create(); }
@@ -293,7 +310,18 @@ struct TFE_CancellationManager {
 };
 
 struct TFE_Executor {
-  tensorflow::EagerExecutor executor;
+  explicit TFE_Executor(bool async)
+      : owned_executor(new tensorflow::EagerExecutor(async)) {}
+
+  explicit TFE_Executor(tensorflow::EagerExecutor* executor)
+      : owned_executor(nullptr), unowned_executor(executor) {}
+
+  tensorflow::EagerExecutor* executor() {
+    return owned_executor == nullptr ? unowned_executor : owned_executor.get();
+  }
+
+  std::unique_ptr<tensorflow::EagerExecutor> owned_executor;
+  tensorflow::EagerExecutor* unowned_executor;
 };
 
 #endif  // TENSORFLOW_C_EAGER_C_API_INTERNAL_H_

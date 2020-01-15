@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/macros.h"
@@ -34,8 +35,6 @@ limitations under the License.
 #endif // GOOGLE_CUDA
 
 namespace tensorflow {
-
-typedef Eigen::ThreadPoolDevice CPUDevice;
 
 #if GOOGLE_CUDA
 using GPUDevice = Eigen::GpuDevice;
@@ -109,12 +108,13 @@ class CudnnCtcLossAllocatorInTemp : public ScratchAllocator {
 } // end namespace
 #endif // GOOGLE_CUDA
 
+template<typename T>
 class CTCLossOp : public OpKernel {
-  typedef Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic,
-                                         Eigen::RowMajor> >
+  typedef Eigen::Map<
+      const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
       InputMap;
   typedef Eigen::Map<
-      Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+      Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
       OutputMap;
 
  public:
@@ -191,7 +191,7 @@ class CTCLossOp : public OpKernel {
                 errors::InvalidArgument("label SparseTensor is not valid: ",
                                         labels_sp_valid.error_message()));
 
-    ctc::CTCLossCalculator::LabelSequences labels_t(batch_size);
+    typename ctc::CTCLossCalculator<T>::LabelSequences labels_t(batch_size);
     for (const auto& g : labels_sp.group({0})) {  // iterate by batch
       const int64 batch_indices = g.group()[0];
       OP_REQUIRES(ctx, FastBoundsCheck(batch_indices, batch_size),
@@ -218,13 +218,13 @@ class CTCLossOp : public OpKernel {
 
     Tensor* loss = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output("loss", seq_len->shape(), &loss));
-    auto loss_t = loss->vec<float>();
+    auto loss_t = loss->vec<T>();
 
     Tensor* gradient;
     OP_REQUIRES_OK(ctx,
                    ctx->allocate_output("gradient", inputs_shape, &gradient));
-    auto gradient_t = gradient->tensor<float, 3>();
-    auto inputs_t = inputs->tensor<float, 3>();
+    auto gradient_t = gradient->tensor<T, 3>();
+    auto inputs_t = inputs->tensor<T, 3>();
     std::vector<OutputMap> gradient_list_t;
     std::vector<InputMap> input_list_t;
 
@@ -239,7 +239,7 @@ class CTCLossOp : public OpKernel {
     gradient_t.setZero();
 
     // Assumption: the blank index is num_classes - 1
-    ctc::CTCLossCalculator ctc_loss_calculator(num_classes - 1, 0);
+    ctc::CTCLossCalculator<T> ctc_loss_calculator(num_classes - 1, 0);
     DeviceBase::CpuWorkerThreads workers =
         *ctx->device()->tensorflow_cpu_worker_threads();
     OP_REQUIRES_OK(ctx, ctc_loss_calculator.CalculateLoss(
@@ -254,10 +254,18 @@ class CTCLossOp : public OpKernel {
   bool ctc_merge_repeated_;
   bool ignore_longer_outputs_than_inputs_;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(CTCLossOp);
+  TF_DISALLOW_COPY_AND_ASSIGN(CTCLossOp<T>);
 };
 
-REGISTER_KERNEL_BUILDER(Name("CTCLoss").Device(DEVICE_CPU), CTCLossOp);
+#define REGISTER_CPU(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                       \
+      Name("CTCLoss").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
+      CTCLossOp<T>);
+
+REGISTER_CPU(float);
+REGISTER_CPU(double);
+
+#undef REGISTER_CPU
 
 #if GOOGLE_CUDA
 class CTCLossOpGPU : public OpKernel {

@@ -124,10 +124,9 @@ class IteratorClusterTest(test.TestCase):
     default_val = -1
     keys = constant_op.constant(["brain", "salad", "surgery"])
     values = constant_op.constant([0, 1, 2], dtypes.int64)
-    table = lookup_ops.HashTable(
+    table = lookup_ops.StaticHashTableV1(
         lookup_ops.KeyValueTensorInitializer(keys, values),
-        default_val,
-        shared_name="shared_table")
+        default_val)
 
     input_sentences = dataset_ops.Dataset.from_tensor_slices(
         ["brain brain tank salad surgery", "surgery brain"])

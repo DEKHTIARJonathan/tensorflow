@@ -15,32 +15,12 @@ limitations under the License.
 #include "tensorflow/lite/c/builtin_op_data.h"
 #include "tensorflow/lite/c/c_api_internal.h"
 #include "tensorflow/lite/experimental/micro/kernels/all_ops_resolver.h"
-#include "tensorflow/lite/experimental/micro/simple_tensor_allocator.h"
 #include "tensorflow/lite/experimental/micro/testing/micro_test.h"
 #include "tensorflow/lite/experimental/micro/testing/test_utils.h"
 
 namespace tflite {
 namespace testing {
 namespace {
-
-inline TfLiteTensor CreateBoolTensor(const bool* data, TfLiteIntArray* dims,
-                                     const char* name) {
-  TfLiteTensor result;
-  result.type = kTfLiteBool;
-  result.data.b = const_cast<bool*>(data);
-  result.dims = dims;
-  result.params = {};
-  result.allocation_type = kTfLiteMemNone;
-  result.bytes = ElementCount(*dims) * sizeof(bool);
-  result.allocation = nullptr;
-  result.name = name;
-  return result;
-}
-
-inline TfLiteTensor CreateBoolTensor(std::initializer_list<bool> data,
-                                     TfLiteIntArray* dims, const char* name) {
-  return CreateBoolTensor(data.begin(), dims, name);
-}
 
 void TestLogicalOp(tflite::BuiltinOperator op,
                    std::initializer_list<int> input1_dims_data,

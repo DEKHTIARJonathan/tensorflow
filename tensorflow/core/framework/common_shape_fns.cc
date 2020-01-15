@@ -878,15 +878,35 @@ Status Conv3DShape(shape_inference::InferenceContext* c) {
   DimensionHandle in_planes_dim = c->Dim(input_shape, 1);
   DimensionHandle in_rows_dim = c->Dim(input_shape, 2);
   DimensionHandle in_cols_dim = c->Dim(input_shape, 3);
+  DimensionHandle input_depth_dim = c->Dim(input_shape, 4);
 
   DimensionHandle filter_planes_dim = c->Dim(filter_shape, 0);
   DimensionHandle filter_rows_dim = c->Dim(filter_shape, 1);
   DimensionHandle filter_cols_dim = c->Dim(filter_shape, 2);
+  DimensionHandle filter_input_depth_dim = c->Dim(filter_shape, 3);
   DimensionHandle output_depth_dim = c->Dim(filter_shape, 4);
 
-  DimensionHandle unused;
-  TF_RETURN_IF_ERROR(
-      c->Merge(c->Dim(input_shape, 4), c->Dim(filter_shape, 3), &unused));
+  // Check that the input tensor and the filter tensor agree on the channel
+  // count.
+  if (c->ValueKnown(input_depth_dim) && c->ValueKnown(filter_input_depth_dim)) {
+    int64 input_depth_value = c->Value(input_depth_dim),
+          filter_input_depth_value = c->Value(filter_input_depth_dim);
+    if (input_depth_value % filter_input_depth_value != 0)
+      return errors::InvalidArgument(
+          "Depth of input (", input_depth_value,
+          ") is not a multiple of input depth of filter (",
+          filter_input_depth_value, ")");
+    if (input_depth_value != filter_input_depth_value) {
+      int64 num_groups = input_depth_value / filter_input_depth_value;
+      if (c->ValueKnown(output_depth_dim)) {
+        int64 output_depth_value = c->Value(output_depth_dim);
+        if (output_depth_value % num_groups != 0)
+          return errors::InvalidArgument(
+              "Depth of output (", output_depth_value,
+              ") is not a multiple of the number of groups (", num_groups, ")");
+      }
+    }
+  }
 
   Padding padding;
   TF_RETURN_IF_ERROR(c->GetAttr("padding", &padding));
@@ -1549,7 +1569,12 @@ Status ConcatShapeHelper(InferenceContext* c, int start_value_index,
 
   // Merge all the non-concat dims, and sum the concat dim to make an output
   // shape.
-  const int32 concat_dim = concat_dim_t->scalar<int32>()();
+  int64 concat_dim;
+  if (concat_dim_t->dtype() == DT_INT32) {
+    concat_dim = static_cast<int64>(concat_dim_t->flat<int32>()(0));
+  } else {
+    concat_dim = concat_dim_t->flat<int64>()(0);
+  }
 
   // Minimum required number of dimensions.
   const int min_rank = concat_dim < 0 ? -concat_dim : concat_dim + 1;

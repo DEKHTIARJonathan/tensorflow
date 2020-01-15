@@ -240,8 +240,10 @@ function usage() {
   echo ""
   echo "  Options:"
   echo "    --project_name <name> set project name to name"
+  echo "    --cpu                 build tensorflow_cpu"
   echo "    --gpu                 build tensorflow_gpu"
   echo "    --gpudirect           build tensorflow_gpudirect"
+  echo "    --rocm                build tensorflow_rocm"
   echo "    --nightly_flag        build tensorflow nightly"
   echo ""
   exit 1
@@ -250,7 +252,10 @@ function usage() {
 function main() {
   PKG_NAME_FLAG=""
   PROJECT_NAME=""
+  CPU_BUILD=0
   GPU_BUILD=0
+  GPUDIRECT_BUILD=0
+  ROCM_BUILD=0
   NIGHTLY_BUILD=0
   SRCDIR=""
   DSTDIR=""
@@ -263,8 +268,12 @@ function main() {
       NIGHTLY_BUILD=1
     elif [[ "$1" == "--gpu" ]]; then
       GPU_BUILD=1
+    elif [[ "$1" == "--cpu" ]]; then
+      CPU_BUILD=1
     elif [[ "$1" == "--gpudirect" ]]; then
-      PKG_NAME_FLAG="--project_name tensorflow_gpudirect"
+      GPUDIRECT_BUILD=1
+    elif [[ "$1" == "--rocm" ]]; then
+      ROCM_BUILD=1
     elif [[ "$1" == "--project_name" ]]; then
       shift
       if [[ -z "$1" ]]; then
@@ -288,6 +297,12 @@ function main() {
     fi
   done
 
+  if [[ $(( GPU_BUILD + CPU_BUILD + GPUDIRECT_BUILD + ROCM_BUILD )) -gt "1" ]]; then
+    echo "Only one of [--gpu, --cpu, --gpudirect, --rocm] may be provided."
+    usage
+    exit 1
+  fi
+
   if [[ -z "$DSTDIR" ]] && [[ -z "$SRCDIR" ]]; then
     echo "No destination dir provided"
     usage
@@ -310,10 +325,22 @@ function main() {
     PKG_NAME_FLAG="--project_name ${PROJECT_NAME}"
   elif [[ ${NIGHTLY_BUILD} == "1" && ${GPU_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tf_nightly_gpu"
+  elif [[ ${NIGHTLY_BUILD} == "1" && ${GPUDIRECT_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tf_nightly_gpudirect"
+  elif [[ ${NIGHTLY_BUILD} == "1" && ${ROCM_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tf_nightly_rocm"
+  elif [[ ${NIGHTLY_BUILD} == "1" && ${CPU_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tf_nightly_cpu"
   elif [[ ${NIGHTLY_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tf_nightly"
   elif [[ ${GPU_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tensorflow_gpu"
+  elif [[ ${GPUDIRECT_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tensorflow_gpudirect"
+  elif [[ ${ROCM_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tensorflow_rocm"
+  elif [[ ${CPU_BUILD} == "1" ]]; then
+    PKG_NAME_FLAG="--project_name tensorflow_cpu"
   fi
 
   build_wheel "$SRCDIR" "$DSTDIR" "$PKG_NAME_FLAG"

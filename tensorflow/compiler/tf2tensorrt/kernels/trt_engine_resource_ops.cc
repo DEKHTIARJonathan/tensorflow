@@ -109,7 +109,7 @@ class InitializeTRTResource : public OpKernel {
                                  resource->cache_.size(), " entries."));
 
     // Get the file name.
-    const string& filename = ctx->input(1).scalar<string>()();
+    const string& filename = ctx->input(1).scalar<tstring>()();
     OP_REQUIRES(ctx, !filename.empty(),
                 errors::InvalidArgument("filename cannot be empty."));
 
@@ -121,7 +121,7 @@ class InitializeTRTResource : public OpKernel {
     uint64 offset = 0;
     int num_loaded_engine = 0;
     do {
-      string record;
+      tstring record;
       Status status = reader->ReadRecord(&offset, &record);
       if (errors::IsOutOfRange(status)) break;
 
@@ -171,8 +171,8 @@ class SerializeTRTResource : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    const string& resource_name = ctx->input(0).scalar<string>()();
-    const string& filename = ctx->input(1).scalar<string>()();
+    const string& resource_name = ctx->input(0).scalar<tstring>()();
+    const string& filename = ctx->input(1).scalar<tstring>()();
     OP_REQUIRES(ctx, !filename.empty(),
                 errors::InvalidArgument("filename cannot be empty."));
 

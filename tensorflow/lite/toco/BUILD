@@ -166,11 +166,10 @@ cc_library(
         "toco_types.h",
     ],
     deps = [
-        # Placeholder for internal file dependency.
-        "@com_google_protobuf//:protobuf_headers",
         "//tensorflow/core:framework_lite",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+        "@com_google_protobuf//:protobuf_headers",
     ],
 )
 
@@ -201,13 +200,16 @@ cc_library(
         "graph_transformations/group_bidirectional_sequence_ops.cc",
         "graph_transformations/hardcode_min_max.cc",
         "graph_transformations/identify_dilated_conv.cc",
+        "graph_transformations/identify_hardswish.cc",
         "graph_transformations/identify_l2_normalization.cc",
         "graph_transformations/identify_l2_pool.cc",
         "graph_transformations/identify_lstm.cc",
         "graph_transformations/identify_lstm_merge_inputs.cc",
         "graph_transformations/identify_lstm_split_inputs.cc",
+        "graph_transformations/identify_nearest_upsample.cc",
         "graph_transformations/identify_prelu.cc",
         "graph_transformations/identify_relu1.cc",
+        "graph_transformations/identify_util.cc",
         "graph_transformations/lstm_utils.cc",
         "graph_transformations/make_initial_dequantize_operator.cc",
         "graph_transformations/merge_reshape_into_preceding_transpose.cc",
@@ -222,6 +224,7 @@ cc_library(
         "graph_transformations/quantize.cc",
         "graph_transformations/read_array_minmax_and_narrow_range_from_fake_quant.cc",
         "graph_transformations/remove_final_dequantize_op.cc",
+        "graph_transformations/remove_successive_transpose.cc",
         "graph_transformations/remove_tensorflow_assert.cc",
         "graph_transformations/remove_tensorflow_identity.cc",
         "graph_transformations/remove_trivial_binary.cc",
@@ -279,6 +282,7 @@ cc_library(
     ],
     hdrs = [
         "graph_transformations/graph_transformations.h",
+        "graph_transformations/identify_util.h",
         "graph_transformations/lstm_utils.h",
     ],
     visibility = ["//visibility:public"],

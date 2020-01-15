@@ -30,6 +30,7 @@ from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.platform import test
 
+
 class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
 
   def _make_shape_tuple(self, batch_size, channel_count, data_rank, data_dim,
@@ -79,8 +80,8 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
     bias_op = self._random_data_op(bias_shape, data_type)
     data_format = self._data_format_from_data_layout(data_layout)
     bias_add_op = nn_ops.bias_add(in_op, bias_op, data_format=data_format)
-    upstream_gradients = array_ops.placeholder(data_type, shape=out_shape,
-                                               name='upstream_gradients')
+    upstream_gradients = array_ops.placeholder(
+        data_type, shape=out_shape, name='upstream_gradients')
     gradient_injector_op = bias_add_op * upstream_gradients
     # The gradient function behaves as if grad_ys is multiplied by the op
     # gradient result, not passing the upstram gradients through the op's
@@ -88,7 +89,9 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
     # gradient_injector_op
     grad_ys = None
     bias_gradients_op = gradients_impl.gradients(
-        gradient_injector_op, bias_op, grad_ys=grad_ys,
+        gradient_injector_op,
+        bias_op,
+        grad_ys=grad_ys,
         colocate_gradients_with_ops=True)
     for i in range(5):
       feed_dict = {upstream_gradients: self._random_ndarray(out_shape)}
@@ -117,7 +120,7 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
     pass
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   # Note that the effect of setting the following environment variable to
   # 'true' is not tested. Unless we can find a simpler pattern for testing these
   # environment variables, it would require this file to be made into a base

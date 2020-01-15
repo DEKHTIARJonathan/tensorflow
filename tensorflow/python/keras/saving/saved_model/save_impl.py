@@ -54,9 +54,15 @@ from tensorflow.python.util.lazy_loader import LazyLoader
 base_layer = LazyLoader(
     "base_layer", globals(),
     "tensorflow.python.keras.engine.base_layer")
+input_layer = LazyLoader(
+    "input_layer", globals(),
+    "tensorflow.python.keras.engine.input_layer")
 training_lib = LazyLoader(
     "training_lib", globals(),
     "tensorflow.python.keras.engine.training")
+sequential_lib = LazyLoader(
+    "sequential_lib", globals(),
+    "tensorflow.python.keras.engine.sequential")
 # pylint:enable=g-inconsistent-quotes
 
 
@@ -147,7 +153,7 @@ def wrap_layer_functions(layer, serialization_cache):
   # Since Sequential models may be modified in place using model.add() or
   # model.pop(), don't use saved functions.
   if (isinstance(layer, keras_load.RevivedLayer) and
-      not isinstance(layer, keras_load.RevivedSequential)):
+      not isinstance(layer, sequential_lib.Sequential)):
     return {fn_name: getattr(layer.keras_api, fn_name, None)
             for fn_name in serialized_attributes.LayerAttributes.all_functions}
 
@@ -212,7 +218,8 @@ def _list_all_layers(obj):
   if isinstance(obj, training_lib.Model):
     return obj.layers
   else:
-    return trackable_layer_utils.filter_empty_layer_containers(obj._layers)  # pylint: disable=protected-access
+    return list(
+        trackable_layer_utils.filter_empty_layer_containers(obj._layers))  # pylint: disable=protected-access
 
 
 def _replace_child_layer_functions(layer, serialization_cache):
@@ -242,6 +249,9 @@ def _replace_child_layer_functions(layer, serialization_cache):
   # pylint: disable=protected-access
   original_fns = {}
   for child_layer in _list_all_layers(layer):
+    if isinstance(child_layer, input_layer.InputLayer):
+      continue
+
     if child_layer not in serialization_cache[constants.KERAS_CACHE_KEY]:
       layer_fns = (
           child_layer._trackable_saved_model_saver._get_serialized_attributes(
@@ -344,8 +354,7 @@ class LayerCallCollection(object):
 
     # If the layer call function has kwargs, then the traced function cannot
     # have an input signature.
-    arg_spec = tf_inspect.getfullargspec(
-        self.layer_call_method)
+    arg_spec = tf_inspect.getfullargspec(self.layer_call_method)
     self._has_kwargs = bool(self._expects_training_arg or
                             arg_spec.defaults or
                             arg_spec.kwonlyargs or
@@ -356,6 +365,12 @@ class LayerCallCollection(object):
     # Bool indicating whether this object is currently tracing the layer call
     # functions.
     self.tracing = False
+
+    # Get the input argument name from the args.
+    args = arg_spec.args
+    if tf_inspect.ismethod(self.layer_call_method):
+      args = args[1:]
+    self._input_arg_name = args[0] if args else 'inputs'
 
   def _generate_input_signature(self, layer):
     """Inspects layer object and returns the inferred input signature.
@@ -443,6 +458,10 @@ class LayerCallCollection(object):
       return self.layer._get_call_arg_value(  # pylint: disable=protected-access
           'training', args, kwargs, inputs_in_args=True)
 
+  def get_input_arg_value(self, args, kwargs):
+    return self.layer._get_call_arg_value(  # pylint: disable=protected-access
+        self._input_arg_name, args, kwargs, inputs_in_args=True)
+
   def _maybe_wrap_with_training_arg(self, call_fn):
     """Wraps call function with added training argument if necessary."""
     if not self.layer._expects_training_arg and self._expects_training_arg:  # pylint: disable=protected-access
@@ -501,18 +520,18 @@ def layer_call_wrapper(call_collection, method):
     """Calls method within call context."""
     layer = call_collection.layer
     training = None
-    inputs = None
+    inputs = call_collection.get_input_arg_value(args, kwargs)
     # pylint: disable=protected-access
     if (args or kwargs) and call_collection.training_arg_was_passed(
         args, kwargs):
-      inputs = args[0]
       training = call_collection.get_training_arg_value(args, kwargs)
     # pylint: enable=protected-access
     original_losses = _reset_layer_losses(layer)
     with base_layer_utils.call_context().enter(
         layer, inputs=inputs, build_graph=False, training=training,
         saving=True):
-      ret = method(*args, **kwargs)
+      with base_layer_utils.autocast_context_manager(layer._compute_dtype):  # pylint: disable=protected-access
+        ret = method(*args, **kwargs)
     _restore_layer_losses(original_losses)
     return ret
   return tf_decorator.make_decorator(target=method, decorator_func=wrapper)

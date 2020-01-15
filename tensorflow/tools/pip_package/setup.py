@@ -47,7 +47,7 @@ DOCLINES = __doc__.split('\n')
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.0.0'
+_VERSION = '2.1.0'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.7.0',
@@ -57,15 +57,26 @@ REQUIRED_PACKAGES = [
     'gast == 0.2.2',
     'google_pasta >= 0.1.6',
     'keras_applications >= 1.0.8',
-    'keras_preprocessing >= 1.0.5',
+    'keras_preprocessing >= 1.1.0',
     'numpy >= 1.16.0, < 2.0',
     'opt_einsum >= 2.3.2',
-    'six >= 1.10.0',
-    'protobuf >= 3.6.1',
-    'tensorboard >= 2.0.0, < 2.1.0',
-    'tensorflow_estimator >= 2.0.0, < 2.1.0',
+    'protobuf >= 3.8.0',
+    'tensorboard >= 2.1.0, < 2.2.0',
+    'tensorflow_estimator >= 2.1.0rc0, < 2.2.0',
     'termcolor >= 1.1.0',
     'wrapt >= 1.11.1',
+    # python3 requires wheel 0.26
+    'wheel >= 0.26;python_version>="3"',
+    'wheel;python_version<"3"',
+    # mock comes with unittest.mock for python3, need to install for python2
+    'mock >= 2.0.0;python_version<"3"',
+    # functools comes with python3, need to install the backport for python2
+    'functools32 >= 3.2.3;python_version<"3"',
+    'six >= 1.12.0',
+    # scipy < 1.4.1 causes segfaults due to pybind11
+    # Latest scipy pip for py2 is scipy==1.2.2
+    'scipy == 1.4.1;python_version>="3"',
+    'scipy == 1.2.2;python_version<"3"',
 ]
 
 if sys.byteorder == 'little':
@@ -81,21 +92,11 @@ if '--project_name' in sys.argv:
   sys.argv.remove('--project_name')
   sys.argv.pop(project_name_idx)
 
-# python3 requires wheel 0.26
-if sys.version_info.major == 3:
-  REQUIRED_PACKAGES.append('wheel >= 0.26')
-else:
-  REQUIRED_PACKAGES.append('wheel')
-  # mock comes with unittest.mock for python3, need to install for python2
-  REQUIRED_PACKAGES.append('mock >= 2.0.0')
-  # functools comes with python3, need to install the backport for python2
-  REQUIRED_PACKAGES.append('functools32 >= 3.2.3')
-
 # tf-nightly should depend on tb-nightly
 if 'tf_nightly' in project_name:
   for i, pkg in enumerate(REQUIRED_PACKAGES):
     if 'tensorboard' in pkg:
-      REQUIRED_PACKAGES[i] = 'tb-nightly >= 1.15.0a0, < 1.16.0a0'
+      REQUIRED_PACKAGES[i] = 'tb-nightly >= 2.1.0a0, < 2.2.0a0'
     elif 'tensorflow_estimator' in pkg and '2.0' in project_name:
       REQUIRED_PACKAGES[i] = 'tensorflow-estimator-2.0-preview'
     elif 'tensorflow_estimator' in pkg:
@@ -113,6 +114,7 @@ CONSOLE_SCRIPTS = [
     # even though the command is not removed, just moved to a different wheel.
     'tensorboard = tensorboard.main:run_main',
     'tf_upgrade_v2 = tensorflow.tools.compatibility.tf_upgrade_v2_main:main',
+    'estimator_ckpt_converter = tensorflow_estimator.python.estimator.tools.checkpoint_converter:main',
 ]
 # pylint: enable=line-too-long
 

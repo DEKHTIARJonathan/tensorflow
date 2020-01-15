@@ -13,11 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H
-#define TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H
+#ifndef TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H_
+#define TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H_
 
 #include <functional>
-#include "tensorflow/core/platform/default/logging.h"
+
+#include "tensorflow/core/framework/logging.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/protobuf/config.pb.h"
 
@@ -59,4 +60,4 @@ XlaGlobalJitLevel GetGlobalJitLevel(
 
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H
+#endif  // TENSORFLOW_CORE_UTIL_XLA_CONFIG_REGISTRY_H_

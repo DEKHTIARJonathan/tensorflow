@@ -65,13 +65,13 @@ cc_library(
     name = "stream_executor_cuda",
     deps = [
         ":stream_executor_no_cuda",
-    ] + if_static(
-        [
+    ] + select({
+        "//tensorflow:oss": ["//tensorflow/stream_executor/cuda:cudart_stub"],
+        "//conditions:default": [
             "//tensorflow/stream_executor/cuda:all_runtime",
             ":cuda",
         ],
-        ["//tensorflow/stream_executor/cuda:cudart_stub"],
-    ) + select({
+    }) + select({
         "@local_config_cuda//cuda:darwin": ["IOKit"],
         "//conditions:default": [],
     }),
@@ -213,7 +213,7 @@ cc_library(
     name = "gif",
     copts = tf_copts(),
     deps = [
-        "@gif_archive//:gif",
+        "@gif",
     ],
 )
 
@@ -221,7 +221,7 @@ cc_library(
     name = "jpeg",
     copts = tf_copts(),
     deps = [
-        "@jpeg",
+        "@libjpeg_turbo//:jpeg",
     ],
 )
 
@@ -229,7 +229,7 @@ cc_library(
     name = "png",
     copts = tf_copts(),
     deps = [
-        "@png_archive//:png",
+        "@png",
         "@zlib_archive//:zlib",
     ],
 )

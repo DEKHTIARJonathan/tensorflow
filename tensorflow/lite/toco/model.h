@@ -554,6 +554,10 @@ struct FullyConnectedOperator : Operator {
   FullyConnectedOperator() : Operator(OperatorType::kFullyConnected) {}
   FullyConnectedWeightsFormat weights_format =
       FullyConnectedWeightsFormat::kDefault;
+
+  // `keep_num_dims` is supported in the FullyConnected kernel version 5, but
+  // it's never supported by Toco.
+  bool keep_num_dims = false;
 };
 
 // Dequantization operator, converting a quantized array of integers with
@@ -944,6 +948,10 @@ struct MinMax {
 
 inline bool operator==(const MinMax& m1, const MinMax& m2) {
   return m1.min == m2.min && m1.max == m2.max;
+}
+
+inline bool operator!=(const MinMax& m1, const MinMax& m2) {
+  return m1.min != m2.min || m1.max != m2.max;
 }
 
 // Fake-quantization operator. This does two things:
