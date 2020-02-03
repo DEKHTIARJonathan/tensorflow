@@ -301,13 +301,15 @@ class LossScaleOptimizerTest(test.TestCase, parameterized.TestCase):
     opt = loss_scale_optimizer.LossScaleOptimizer(opt, 'dynamic')
     with self.assertRaisesRegexp(
         AttributeError,
-        'You cannot call get_slot on a LossScaleOptimizer. This limitation '
-        'will be removed in the future.'):
+        'You cannot call get_slot on a {}. This limitation '
+        'will be removed in the future.'.format(opt.__class__.__name__)
+    ):
       opt.get_slot(None, None)
     with self.assertRaisesRegexp(
         AttributeError,
-        'You cannot call add_slot on a LossScaleOptimizer. This limitation '
-        'will be removed in the future.'):
+        'You cannot call add_slot on a {}. This limitation '
+        'will be removed in the future.'.format(opt.__class__.__name__)
+    ):
       opt.add_slot(None, None)
 
   def testPassingNoneToLossScale(self):

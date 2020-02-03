@@ -79,6 +79,7 @@ keras_packages = [
     "tensorflow.python.keras.optimizer_v2.nadam",
     "tensorflow.python.keras.optimizer_v2.optimizer_v2",
     "tensorflow.python.keras.optimizer_v2.rmsprop",
+    "tensorflow.python.keras.optimizer_v2.wrapping_interface",
     "tensorflow.python.keras.optimizers",
     "tensorflow.python.keras.premade.linear",
     "tensorflow.python.keras.premade.wide_deep",

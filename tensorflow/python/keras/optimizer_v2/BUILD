@@ -22,6 +22,7 @@ py_library(
         "nadam.py",
         "optimizer_v2.py",
         "rmsprop.py",
+        "wrapping_interface.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
