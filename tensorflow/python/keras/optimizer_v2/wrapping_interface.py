@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#   http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,7 +35,7 @@ from tensorflow.python.util.tf_export import keras_export
 
 
 class _UnwrapPreventer(object):
-    """Wrapper that DistributionStrategy will not unwrap.
+  """Wrapper that DistributionStrategy will not unwrap.
 
   Typically, DistributionStrategy will unwrap values when going from a cross-
   replica context to a replica context via `call_for_each_replica`. This class
@@ -46,253 +46,253 @@ class _UnwrapPreventer(object):
   unwrapped by DistributionStrategy
   """
 
-    def __init__(self, value):
-        self.value = value
+  def __init__(self, value):
+    self.value = value
 
 
 class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
-    # =============== PUBLIC METHODS API - CAN OVERWRITTEN ============== #
+  # =============== PUBLIC METHODS API - CAN OVERWRITTEN ============== #
 
-    def setup(self, *args, **kwargs):
-        # this API exposes `setup` instead of __init__ to prevent users
-        # from not calling the `super().__init__` method => might break API.
-        pass
+  def setup(self, *args, **kwargs):
+    # this API exposes `setup` instead of __init__ to prevent users
+    # from not calling the `super().__init__` method => might break API.
+    pass
 
-    def before_compute_gradients_hook(self, loss):
-        return loss
+  def before_compute_gradients_hook(self, loss):
+    return loss
 
-    def after_compute_gradients_hook(self, grads_and_vars):
-        return grads_and_vars
+  def after_compute_gradients_hook(self, grads_and_vars):
+    return grads_and_vars
 
-    def cond_apply_step_hook(self, grads_and_vars):
-        return gen_control_flow_ops.no_op(), True
+  def cond_apply_step_hook(self, grads_and_vars):
+    return gen_control_flow_ops.no_op(), True
 
-    def before_apply_gradients_hook(self, loss):
-        return loss
+  def before_apply_gradients_hook(self, loss):
+    return loss
 
-    # =============== PUBLIC METHODS API - CAN BE EXTENDED ============== #
-    # To be noted: calling `super()` is required for these methods
+  # =============== PUBLIC METHODS API - CAN BE EXTENDED ============== #
+  # To be noted: calling `super()` is required for these methods
 
-    def get_config(self):
-        serialized_optimizer = optimizers.serialize(self._optimizer)
-        return {
-            'optimizer': serialized_optimizer,
-        }
+  def get_config(self):
+    serialized_optimizer = optimizers.serialize(self._optimizer)
+    return {
+      'optimizer': serialized_optimizer,
+    }
 
-    @classmethod
-    def from_config(cls, config, custom_objects=None):
-        config = config.copy()  # Make a copy, since we mutate config
-        config['optimizer'] = optimizers.deserialize(
-            config['optimizer'],
-            custom_objects=custom_objects
-        )
-        return cls(**config)
+  @classmethod
+  def from_config(cls, config, custom_objects=None):
+    config = config.copy()  # Make a copy, since we mutate config
+    config['optimizer'] = optimizers.deserialize(
+      config['optimizer'],
+      custom_objects=custom_objects
+    )
+    return cls(**config)
 
-    # =============== PRIVATE API - DO NOT OVERWRITE ============== #
+  # =============== PRIVATE API - DO NOT OVERWRITE ============== #
 
-    def __init__(
-            self,
-            optimizer,
-            *args,
-            **kwargs
-    ):
-        """Initializes the wrapping interface optimizer.
+  def __init__(
+      self,
+      optimizer,
+      *args,
+      **kwargs
+  ):
+    """Initializes the wrapping interface optimizer.
 
-        Args:
-        optimizer: The Optimizer instance to wrap.
-        """
+    Args:
+    optimizer: The Optimizer instance to wrap.
+    """
 
-        try:
-            name = kwargs["name"]
-            del kwargs["name"]
-        except KeyError:
-            name = self.__class__.__name__
+    try:
+      name = kwargs["name"]
+      del kwargs["name"]
+    except KeyError:
+      name = self.__class__.__name__
 
-        if not isinstance(optimizer, optimizer_v2.OptimizerV2):
-            raise ValueError(
-                '"optimizer" must be an instance of OptimizerV2, but '
-                'got: %s' % optimizer
-            )
+    if not isinstance(optimizer, optimizer_v2.OptimizerV2):
+      raise ValueError(
+        '"optimizer" must be an instance of OptimizerV2, but '
+        'got: %s' % optimizer
+      )
 
-        if hasattr(optimizer, 'clipnorm'):
-            raise ValueError(
-                '%s does not support wrapping optimizers with a clipnorm. '
-                'Optimizer %s has clipnorm %s' % (
-                    self.__class__.__name__,
-                    optimizer,
-                    optimizer.clipnorm
-                ))
+    if hasattr(optimizer, 'clipnorm'):
+      raise ValueError(
+        '%s does not support wrapping optimizers with a clipnorm. '
+        'Optimizer %s has clipnorm %s' % (
+          self.__class__.__name__,
+          optimizer,
+          optimizer.clipnorm
+        ))
 
-        if hasattr(optimizer, 'clipvalue'):
-            raise ValueError(
-                '%s does not support wrapping optimizers with a clipvalue. '
-                'Optimizer %s has clipvalue %s' % (
-                    self.__class__.__name__,
-                    optimizer,
-                    optimizer.clipvalue
-                ))
+    if hasattr(optimizer, 'clipvalue'):
+      raise ValueError(
+        '%s does not support wrapping optimizers with a clipvalue. '
+        'Optimizer %s has clipvalue %s' % (
+          self.__class__.__name__,
+          optimizer,
+          optimizer.clipvalue
+        ))
 
-        self._optimizer = optimizer
-        self._track_trackable(self._optimizer, 'base_optimizer')
+    self._optimizer = optimizer
+    self._track_trackable(self._optimizer, 'base_optimizer')
 
-        # Needed because the superclass's __getattribute__ checks this.
-        self._hyper = {}
+    # Needed because the superclass's __getattribute__ checks this.
+    self._hyper = {}
 
-        self.setup(*args, **kwargs)
+    self.setup(*args, **kwargs)
 
-        super(WrappingInterfaceOptimizer, self).__init__(name=name)
+    super(WrappingInterfaceOptimizer, self).__init__(name=name)
 
-    def _compute_gradients(self, loss, var_list, grad_loss=None):
-        loss = self.before_compute_gradients_hook(loss)
-        grads_and_vars = self._optimizer._compute_gradients(
-            loss,
-            var_list,
-            grad_loss
-        )
-        grads_and_vars = self.after_compute_gradients_hook(grads_and_vars)
-        return grads_and_vars
+  def _compute_gradients(self, loss, var_list, grad_loss=None):
+    loss = self.before_compute_gradients_hook(loss)
+    grads_and_vars = self._optimizer._compute_gradients(
+      loss,
+      var_list,
+      grad_loss
+    )
+    grads_and_vars = self.after_compute_gradients_hook(grads_and_vars)
+    return grads_and_vars
 
-    def get_gradients(self, loss, params):
-        loss = self.before_compute_gradients_hook(loss)
-        grads = self._optimizer.get_gradients(loss, params)
-        return self.get_unscaled_gradients(grads)
+  def get_gradients(self, loss, params):
+    loss = self.before_compute_gradients_hook(loss)
+    grads = self._optimizer.get_gradients(loss, params)
+    return self.get_unscaled_gradients(grads)
 
-    def apply_gradients(self, grads_and_vars, name=None):
-        if distribution_strategy_context.in_cross_replica_context():
-            raise ValueError(
-                'apply_gradients() must be called in a replica context.')
+  def apply_gradients(self, grads_and_vars, name=None):
+    if distribution_strategy_context.in_cross_replica_context():
+      raise ValueError(
+        'apply_gradients() must be called in a replica context.')
 
-        grads_and_vars = tuple(grads_and_vars)
+    grads_and_vars = tuple(grads_and_vars)
 
-        return distribution_strategy_context.get_replica_context().merge_call(
-            self._apply_gradients_cross_replica,
-            args=(grads_and_vars, name)
-        )
+    return distribution_strategy_context.get_replica_context().merge_call(
+      self._apply_gradients_cross_replica,
+      args=(grads_and_vars, name)
+    )
 
-    def _apply_gradients(self, grads, wrapped_vars, name):
-        return self._optimizer.apply_gradients(
-            list(zip(grads, wrapped_vars.value)),
-            name
-        )
+  def _apply_gradients(self, grads, wrapped_vars, name):
+    return self._optimizer.apply_gradients(
+      list(zip(grads, wrapped_vars.value)),
+      name
+    )
 
-    def _apply_gradients_cross_replica(self, distribution, grads_and_vars,
-                                       name):
-        grads = [g for g, _ in grads_and_vars]
-        should_apply_op, should_apply_bool = self.cond_apply_step_hook(
-            grads_and_vars
-        )
+  def _apply_gradients_cross_replica(self, distribution, grads_and_vars,
+                     name):
+    grads = [g for g, _ in grads_and_vars]
+    should_apply_op, should_apply_bool = self.cond_apply_step_hook(
+      grads_and_vars
+    )
 
-        def apply_fn():
-            # We do not want DistributionStrategy to unwrap any
-            # MirroredVariables in grads_and_vars, because even in a replica
-            # context, the wrapped optimizer expects mirrored variables. So
-            # we wrap the variables with an _UnwrapPreventer, preventing
-            # DistributionStrategy from unwrapping the MirroredVariables.
-            wrapped_vars = _UnwrapPreventer([v for _, v in grads_and_vars])
+    def apply_fn():
+      # We do not want DistributionStrategy to unwrap any
+      # MirroredVariables in grads_and_vars, because even in a replica
+      # context, the wrapped optimizer expects mirrored variables. So
+      # we wrap the variables with an _UnwrapPreventer, preventing
+      # DistributionStrategy from unwrapping the MirroredVariables.
+      wrapped_vars = _UnwrapPreventer([v for _, v in grads_and_vars])
 
-            return distribution.extended.call_for_each_replica(
-                self._apply_gradients,
-                args=(grads, wrapped_vars, name)
-            )
+      return distribution.extended.call_for_each_replica(
+        self._apply_gradients,
+        args=(grads, wrapped_vars, name)
+      )
 
-        # Note: We must call this cond() in a cross-replica context.
-        # DistributionStrategy does not support having a cond in a replica
-        # context with a branch that calls `merge_call`, and
-        # self._optimizer.apply_gradients calls `merge_call`.
-        maybe_apply_op = smart_cond.smart_cond(
-            should_apply_bool,
-            apply_fn,
-            gen_control_flow_ops.no_op
-        )
+    # Note: We must call this cond() in a cross-replica context.
+    # DistributionStrategy does not support having a cond in a replica
+    # context with a branch that calls `merge_call`, and
+    # self._optimizer.apply_gradients calls `merge_call`.
+    maybe_apply_op = smart_cond.smart_cond(
+      should_apply_bool,
+      apply_fn,
+      gen_control_flow_ops.no_op
+    )
 
-        return control_flow_ops.group(maybe_apply_op, should_apply_op)
+    return control_flow_ops.group(maybe_apply_op, should_apply_op)
 
-    # For the most part, we only expose methods in the base OptimizerV2, not
-    # individual subclasses like Adam. However, although "learning_rate" and "lr"
-    # properties are not part of the base OptimizerV2 class, they are part of most
-    # subclasses, so we expose them here for convenience.
+  # For the most part, we only expose methods in the base OptimizerV2, not
+  # individual subclasses like Adam. However, although "learning_rate" and "lr"
+  # properties are not part of the base OptimizerV2 class, they are part of most
+  # subclasses, so we expose them here for convenience.
 
-    # =============== PRIVATE API - DO NOT OVERWRITE ============== #
-    # GETTERS & SETTERS - Shall eventually be implemented using:
-    # - __getattr__
-    # - __setattr__
+  # =============== PRIVATE API - DO NOT OVERWRITE ============== #
+  # GETTERS & SETTERS - Shall eventually be implemented using:
+  # - __getattr__
+  # - __setattr__
 
-    @property
-    def iterations(self):
-        return self._optimizer.iterations
+  @property
+  def iterations(self):
+    return self._optimizer.iterations
 
-    @iterations.setter
-    def iterations(self, variable):
-        self._optimizer.iterations = variable
+  @iterations.setter
+  def iterations(self, variable):
+    self._optimizer.iterations = variable
 
-    @property
-    def learning_rate(self):
-        return self._optimizer.learning_rate
+  @property
+  def learning_rate(self):
+    return self._optimizer.learning_rate
 
-    @learning_rate.setter
-    def learning_rate(self, lr):
-        self._optimizer.learning_rate = lr
+  @learning_rate.setter
+  def learning_rate(self, lr):
+    self._optimizer.learning_rate = lr
 
-    @property
-    def lr(self):
-        return self._optimizer.lr
+  @property
+  def lr(self):
+    return self._optimizer.lr
 
-    @lr.setter
-    def lr(self, lr):
-        self._optimizer.lr = lr
+  @lr.setter
+  def lr(self, lr):
+    self._optimizer.lr = lr
 
-    def get_slot_names(self):
-        return self._optimizer.get_slot_names()
+  def get_slot_names(self):
+    return self._optimizer.get_slot_names()
 
-    def variables(self):
-        return self._optimizer.variables()
+  def variables(self):
+    return self._optimizer.variables()
 
-    @property
-    def weights(self):
-        return self._optimizer.weights
+  @property
+  def weights(self):
+    return self._optimizer.weights
 
-    def get_weights(self):
-        return self._optimizer.get_weights()
+  def get_weights(self):
+    return self._optimizer.get_weights()
 
-    def set_weights(self, weights):
-        return self._optimizer.set_weights(weights)
+  def set_weights(self, weights):
+    return self._optimizer.set_weights(weights)
 
-    # Delegations: We delegate most OptimizerV2 methods to the wrapped optimizer
-    # below.
+  # Delegations: We delegate most OptimizerV2 methods to the wrapped optimizer
+  # below.
 
-    def get_slot(self, var, slot_name):
-        # We cannot implement get_slot for the following reason: When saving a
-        # checkpoint, two optimizers cannot share slot variables. Since both the
-        # LossScaleOptimizer and the wrapped optimizer (self and self._optimizer
-        # respectively) are checkpointed, we cannot expose the wrapped
-        # optimizer's slots in the LossScaleOptimizer. Otherwise, a checkpoint
-        # would believe both optimizers share slot variables.
-        raise AttributeError(
-            'You cannot call get_slot on a %s. '
-            'This limitation will be removed in the future.' %
-            self.__class__.__name__
-        )
+  def get_slot(self, var, slot_name):
+    # We cannot implement get_slot for the following reason: When saving a
+    # checkpoint, two optimizers cannot share slot variables. Since both the
+    # LossScaleOptimizer and the wrapped optimizer (self and self._optimizer
+    # respectively) are checkpointed, we cannot expose the wrapped
+    # optimizer's slots in the LossScaleOptimizer. Otherwise, a checkpoint
+    # would believe both optimizers share slot variables.
+    raise AttributeError(
+      'You cannot call get_slot on a %s. '
+      'This limitation will be removed in the future.' %
+      self.__class__.__name__
+    )
 
-    def add_slot(self, var, slot_name, initializer='zeros'):
-        # We disallow adding a slot for consistency with `get_slot`.
-        raise AttributeError(
-            'You cannot call add_slot on a %s. '
-            'This limitation will be removed in the future.' %
-            self.__class__.__name__
-        )
+  def add_slot(self, var, slot_name, initializer='zeros'):
+    # We disallow adding a slot for consistency with `get_slot`.
+    raise AttributeError(
+      'You cannot call add_slot on a %s. '
+      'This limitation will be removed in the future.' %
+      self.__class__.__name__
+    )
 
-    # We do not override some OptimizerV2 methods. For each, we describe why we do
-    # not delegate them to self._optimizer:
-    # * get_updates: get_updates() calls get_gradients(). Since we override
-    #   get_gradients(), we cannot delegate get_updates() to self._optimizer,
-    #   otherwise the overridden get_gradients() method would not be called.
-    #   Luckily, get_updates() does not access any OptimizerV2 fields, so
-    #   inheriting the OptimizerV2 version works fine.
-    # * minimize: We don't delegate for a similar as get_updates(): it calls
-    #   both self._compute_gradients() and self.apply_gradients(), and both need
-    #   to have the LossScaleOptimizer version called.
+  # We do not override some OptimizerV2 methods. For each, we describe why we do
+  # not delegate them to self._optimizer:
+  # * get_updates: get_updates() calls get_gradients(). Since we override
+  #   get_gradients(), we cannot delegate get_updates() to self._optimizer,
+  #   otherwise the overridden get_gradients() method would not be called.
+  #   Luckily, get_updates() does not access any OptimizerV2 fields, so
+  #   inheriting the OptimizerV2 version works fine.
+  # * minimize: We don't delegate for a similar as get_updates(): it calls
+  #   both self._compute_gradients() and self.apply_gradients(), and both need
+  #   to have the LossScaleOptimizer version called.
 
-    # TODO(reedwm): Maybe merge this class's functionality into OptimizerV2.
+  # TODO(reedwm): Maybe merge this class's functionality into OptimizerV2.
 
-    # TODO(reedwm): Maybe throw an error if mixed precision is used without this
-    # optimizer being used.
+  # TODO(reedwm): Maybe throw an error if mixed precision is used without this
+  # optimizer being used.
