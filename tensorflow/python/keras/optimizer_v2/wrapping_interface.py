@@ -62,10 +62,23 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   # execution can not be guaranteed.
   _PRIORITY = 0  # default priority value, shall be adapted when subclassed
 
+  # This method is called by __init__() and is responsible to setup
+  # all the specific requirements for the optimizer.
   def setup(self, *args, **kwargs):
     # this API exposes `setup` instead of __init__ to prevent users
     # from not calling the `super().__init__` method => might break API.
     pass
+
+  # Hooks by order of execution
+
+  # 1. `before_compute_gradients_hook(self, loss)`
+  # 2. Compute Gradients => Underlying Optimizer/Gradient Tape task
+  # 3. `after_compute_gradients_hook(self, grads_and_vars)`
+  # 4. `before_apply_gradients_hook(self, grads_and_vars)`
+  # 5. `cond_apply_step_hook(self, grads_and_vars)`
+  #     Note: this hook allows to skip a step, essential mechanism
+  #           for LossScaling used in mixed precision training.
+  # 6. Apply Gradients => Underlying Optimizer task
 
   def before_compute_gradients_hook(self, loss):
     return loss
@@ -73,11 +86,11 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   def after_compute_gradients_hook(self, grads_and_vars):
     return grads_and_vars
 
-  def cond_apply_step_hook(self, grads_and_vars):
-    return gen_control_flow_ops.no_op(), True
-
   def before_apply_gradients_hook(self, grads_and_vars):
     return grads_and_vars
+
+  def cond_apply_step_hook(self, grads_and_vars):
+    return gen_control_flow_ops.no_op(), True
 
   # =============== PUBLIC METHODS API - CAN BE EXTENDED ============== #
   # To be noted: calling `super()` is required for these methods
@@ -224,7 +237,6 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
         'apply_gradients() must be called in a replica context.')
 
     grads_and_vars = tuple(grads_and_vars)
-
     grads_and_vars = self.apply_before_apply_gradients_hooks(grads_and_vars)
 
     return distribution_strategy_context.get_replica_context().merge_call(
