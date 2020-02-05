@@ -508,8 +508,6 @@ cc_library(
     hdrs = ["regexp.h"],
     deps = [
         ":platform",
-        ":types",
-        "@com_google_absl//absl/strings",
         "@com_googlesource_code_re2//:re2",
     ],
 )
@@ -904,10 +902,8 @@ tf_cc_test(
         "//tensorflow/core/platform/testdata:test_noop",
         "//tensorflow/core/platform/testdata:test_stderr",
     ],
-    tags = [
-        "no_windows",
-    ],
     deps = [
+        ":resource_loader",
         ":strcat",
         ":subprocess",
         "//tensorflow/core:test",
@@ -960,7 +956,7 @@ tf_cc_test(
     srcs = ["platform_strings_test.cc"],
     features = ["-dynamic_link_test_srcs"],  # see go/dynamic_link_test_srcs
     deps = [
-        "platform_strings",
+        ":platform_strings",
         "//tensorflow/core:lib",
     ],
 )
