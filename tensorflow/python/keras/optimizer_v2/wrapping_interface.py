@@ -349,10 +349,10 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   def get_slot(self, var, slot_name):
     # We cannot implement get_slot for the following reason: When saving a
     # checkpoint, two optimizers cannot share slot variables. Since both the
-    # LossScaleOptimizer and the wrapped optimizer (self and self._optimizer
+    # WrappingInterfaceOptimizer and the wrapped optimizer (self and self._optimizer
     # respectively) are checkpointed, we cannot expose the wrapped
-    # optimizer's slots in the LossScaleOptimizer. Otherwise, a checkpoint
-    # would believe both optimizers share slot variables.
+    # optimizer's slots in the WrappingInterfaceOptimizer. Otherwise,
+    # a checkpoint would believe both optimizers share slot variables.
     raise AttributeError(
       'You cannot call get_slot on a %s. '
       'This limitation will be removed in the future.' %
@@ -376,7 +376,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   #   inheriting the OptimizerV2 version works fine.
   # * minimize: We don't delegate for a similar as get_updates(): it calls
   #   both self._compute_gradients() and self.apply_gradients(), and both need
-  #   to have the LossScaleOptimizer version called.
+  #   to have the WrappingInterfaceOptimizer version called.
 
   # TODO(reedwm): Maybe merge this class's functionality into OptimizerV2.
 
