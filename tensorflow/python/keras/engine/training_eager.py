@@ -25,7 +25,7 @@ from tensorflow.python.eager.backprop import GradientTape
 from tensorflow.python.framework import ops
 from tensorflow.python.keras import backend
 from tensorflow.python.keras.engine import training_utils
-from tensorflow.python.keras.mixed_precision.experimental import loss_scale_optimizer
+from tensorflow.python.keras.optimizer_v2 import wrapping_interface
 from tensorflow.python.keras.utils import losses_utils
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops.losses import util as tf_losses_utils
@@ -258,23 +258,35 @@ def _process_single_batch(model,
               output_loss_metrics=output_loss_metrics,
               sample_weights=sample_weights,
               training=training))
-      if isinstance(model.optimizer, loss_scale_optimizer.LossScaleOptimizer):
-        scaled_total_loss = model.optimizer.get_scaled_loss(total_loss)
-      else:
-        scaled_total_loss = total_loss
+
+      if issubclass(
+              model.optimizer.__class__,
+              wrapping_interface.WrappingInterfaceOptimizer
+      ):
+        total_loss = model.optimizer.apply_before_compute_gradients_hooks(
+            total_loss
+        )
+
     if training:
       trainable_weights = model.trainable_weights
       if trainable_weights:
         # TODO(tanzheny) b/132690565: Provide mechanism for user to override
         # model.train_on_batch.
         if hasattr(model, '_backwards'):
-          model._backwards(tape, scaled_total_loss)
+          model._backwards(tape, total_loss)
         else:
-          grads = tape.gradient(scaled_total_loss, trainable_weights)
-          if isinstance(model.optimizer,
-                        loss_scale_optimizer.LossScaleOptimizer):
-            grads = model.optimizer.get_unscaled_gradients(grads)
-          model.optimizer.apply_gradients(zip(grads, trainable_weights))
+          grads = tape.gradient(total_loss, trainable_weights)
+
+          grads_and_vars = zip(grads, trainable_weights)
+
+          if issubclass(
+                  model.optimizer.__class__,
+                  wrapping_interface.WrappingInterfaceOptimizer
+          ):
+            grads_and_vars = model.optimizer.\
+                apply_after_compute_gradients_hooks(grads_and_vars)
+
+          model.optimizer.apply_gradients(grads_and_vars)
       else:
         logging.warning('The list of trainable weights is empty. Make sure that'
                         ' you are not setting model.trainable to False before '
