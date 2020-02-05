@@ -17,18 +17,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.distribute import distribution_strategy_context
-from tensorflow.python.framework import smart_cond
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
 from tensorflow.python.keras import backend
-from tensorflow.python.keras import optimizers
 from tensorflow.python.keras.mixed_precision.experimental import \
   loss_scale as keras_loss_scale_module
 from tensorflow.python.keras.optimizer_v2.wrapping_interface import \
   WrappingInterfaceOptimizer
-from tensorflow.python.ops import control_flow_ops
-from tensorflow.python.ops import gen_control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.training.experimental import \
   loss_scale as loss_scale_module

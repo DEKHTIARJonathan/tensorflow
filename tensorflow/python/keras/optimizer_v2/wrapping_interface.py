@@ -18,20 +18,12 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.distribute import distribution_strategy_context
-from tensorflow.python.framework import constant_op
-from tensorflow.python.framework import dtypes
-from tensorflow.python.framework import ops
 from tensorflow.python.framework import smart_cond
-from tensorflow.python.keras import backend_config
 from tensorflow.python.keras import optimizers
 from tensorflow.python.keras.optimizer_v2 import optimizer_v2
-from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_control_flow_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import state_ops
-from tensorflow.python.training import training_ops
-from tensorflow.python.util.tf_export import keras_export
 
 
 class _UnwrapPreventer(object):
