@@ -37,6 +37,9 @@ from tensorflow.python.util.tf_export import keras_export
 
 @keras_export('keras.mixed_precision.experimental.LossScaleOptimizer')
 class LossScaleOptimizer(WrappingInterfaceOptimizer):
+  # ensure the hooks are executed last (order: from highest to lowest)
+  _PRIORITY = -999
+
   """An optimizer that applies loss scaling.
 
   Loss scaling is a process that multiplies the loss by a multiplier called the

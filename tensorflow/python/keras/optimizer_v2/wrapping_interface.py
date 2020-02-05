@@ -53,6 +53,23 @@ class _UnwrapPreventer(object):
 class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   # =============== PUBLIC METHODS API - CAN OVERWRITTEN ============== #
 
+  # Developer Notes on Optimizer Priority - @DEKHTIARJonathan:
+  #
+  # Hooks might need to be executed in a specific order to avoid conflicts or
+  # corner cases. One typical example is the combination of:
+  # - collective allreduce (with Horovod for instance)
+  # - LossScaling optimizer for mixed precision training
+  #
+  # The desirable order is: allreduce first, loss scaling last.
+  # We achieve by introducing an optimizer priority that enforces this behavior.
+  # An experienced user, can always override this value at run time or by
+  # subclassing.
+  #
+  # Default order: from the highest priority to the lowest
+  # If two `WrappingInterfaceOptimizers` have the same priority, order of
+  # execution can not be guaranteed.
+  _PRIORITY = 0  # default priority value, shall be adapted when subclassed
+
   def setup(self, *args, **kwargs):
     # this API exposes `setup` instead of __init__ to prevent users
     # from not calling the `super().__init__` method => might break API.
@@ -67,8 +84,8 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   def cond_apply_step_hook(self, grads_and_vars):
     return gen_control_flow_ops.no_op(), True
 
-  def before_apply_gradients_hook(self, loss):
-    return loss
+  def before_apply_gradients_hook(self, grads_and_vars):
+    return grads_and_vars
 
   # =============== PUBLIC METHODS API - CAN BE EXTENDED ============== #
   # To be noted: calling `super()` is required for these methods
@@ -88,7 +105,9 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
     )
     return cls(**config)
 
+  # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% #
   # =============== PRIVATE API - DO NOT OVERWRITE ============== #
+  # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% #
 
   def __init__(
       self,
@@ -142,20 +161,70 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
 
     super(WrappingInterfaceOptimizer, self).__init__(name=name)
 
+  # ============ Automatic Nested Optimizers Hooks Apply Methods =========== #
+
+  def apply_before_compute_gradients_hooks(self, loss):
+    for opt in self.all_wrapping_optimizers:
+      loss = opt.before_compute_gradients_hook(loss)
+    return loss
+
+  def apply_after_compute_gradients_hooks(self, grads_and_vars):
+    for opt in self.all_wrapping_optimizers:
+      grads_and_vars = opt.after_compute_gradients_hook(grads_and_vars)
+    return grads_and_vars
+
+  def apply_cond_apply_step_hooks(self, grads_and_vars):
+
+    should_apply_bool = True
+    should_apply_op = list()
+
+    for opt in self.all_wrapping_optimizers:
+      _should_apply_op, _should_apply_bool = opt.cond_apply_step_hook(
+        grads_and_vars
+      )
+
+      if isinstance(should_apply_bool, bool) and should_apply_bool:
+        should_apply_bool = _should_apply_bool
+      else:
+        should_apply_bool = math_ops.logical_and(
+          should_apply_bool,
+          _should_apply_bool
+        )
+
+      should_apply_op.append(_should_apply_op)
+
+      return should_apply_op, should_apply_bool
+
+  def apply_before_apply_gradients_hooks(self, grads_and_vars):
+    for opt in self.all_wrapping_optimizers:
+      grads_and_vars = opt.before_apply_gradients_hook(grads_and_vars)
+    return grads_and_vars
+
   def _compute_gradients(self, loss, var_list, grad_loss=None):
-    loss = self.before_compute_gradients_hook(loss)
+
+    loss = self.apply_before_compute_gradients_hooks(loss)
+
     grads_and_vars = self._optimizer._compute_gradients(
       loss,
       var_list,
       grad_loss
     )
-    grads_and_vars = self.after_compute_gradients_hook(grads_and_vars)
+
+    grads_and_vars = self.apply_after_compute_gradients_hooks(grads_and_vars)
+
     return grads_and_vars
 
   def get_gradients(self, loss, params):
-    loss = self.before_compute_gradients_hook(loss)
+
+    loss = self.apply_before_compute_gradients_hooks(loss)
+
     grads = self._optimizer.get_gradients(loss, params)
-    return self.get_unscaled_gradients(grads)
+
+    grads_and_vars = list(zip(grads, params))
+
+    grads_and_vars = self.apply_after_compute_gradients_hooks(grads_and_vars)
+
+    return [g for g, _ in grads_and_vars]
 
   def apply_gradients(self, grads_and_vars, name=None):
     if distribution_strategy_context.in_cross_replica_context():
@@ -163,6 +232,8 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
         'apply_gradients() must be called in a replica context.')
 
     grads_and_vars = tuple(grads_and_vars)
+
+    grads_and_vars = self.apply_before_apply_gradients_hooks(grads_and_vars)
 
     return distribution_strategy_context.get_replica_context().merge_call(
       self._apply_gradients_cross_replica,
@@ -175,12 +246,9 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
       name
     )
 
-  def _apply_gradients_cross_replica(self, distribution, grads_and_vars,
-                     name):
-    grads = [g for g, _ in grads_and_vars]
-    should_apply_op, should_apply_bool = self.cond_apply_step_hook(
-      grads_and_vars
-    )
+  def _apply_gradients_cross_replica(self, distribution, grads_and_vars, name):
+
+    should_apply_op, should_apply_bool = self.apply_cond_apply_step_hooks(grads_and_vars)
 
     def apply_fn():
       # We do not want DistributionStrategy to unwrap any
@@ -189,6 +257,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
       # we wrap the variables with an _UnwrapPreventer, preventing
       # DistributionStrategy from unwrapping the MirroredVariables.
       wrapped_vars = _UnwrapPreventer([v for _, v in grads_and_vars])
+      grads = [g for g, _ in grads_and_vars]
 
       return distribution.extended.call_for_each_replica(
         self._apply_gradients,
@@ -205,7 +274,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
       gen_control_flow_ops.no_op
     )
 
-    return control_flow_ops.group(maybe_apply_op, should_apply_op)
+    return control_flow_ops.group(*[maybe_apply_op, *should_apply_op])
 
   # For the most part, we only expose methods in the base OptimizerV2, not
   # individual subclasses like Adam. However, although "learning_rate" and "lr"
@@ -257,9 +326,26 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   def set_weights(self, weights):
     return self._optimizer.set_weights(weights)
 
+  # shortcut to access all underlying optimizers
+  @property
+  def all_wrapping_optimizers(self):
+    wrapping_opts = list()
+
+    optimizer = self
+    while issubclass(optimizer.__class__, WrappingInterfaceOptimizer):
+      wrapping_opts.append(optimizer)
+      optimizer = optimizer._optimizer
+
+    wrapping_opts = sorted(
+      wrapping_opts,
+      key=lambda opt: opt._PRIORITY,
+      reverse=True
+    )
+
+    return wrapping_opts
+
   # Delegations: We delegate most OptimizerV2 methods to the wrapped optimizer
   # below.
-
   def get_slot(self, var, slot_name):
     # We cannot implement get_slot for the following reason: When saving a
     # checkpoint, two optimizers cannot share slot variables. Since both the
