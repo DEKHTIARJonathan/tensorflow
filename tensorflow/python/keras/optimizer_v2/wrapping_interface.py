@@ -157,7 +157,16 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
         ))
 
     self._optimizer = optimizer
+
+    while True:
+      if issubclass(optimizer.__class__, WrappingInterfaceOptimizer):
+        optimizer = optimizer._optimizer
+
+      self._keras_optimizer = optimizer
+      break
+
     self._track_trackable(self._optimizer, 'base_optimizer')
+    self._track_trackable(self._keras_optimizer, 'base_keras_optimizer')
 
     # Needed because the superclass's __getattribute__ checks this.
     self._hyper = {}
@@ -209,7 +218,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
 
     loss = self.apply_before_compute_gradients_hooks(loss)
 
-    grads_and_vars = self._optimizer._compute_gradients(
+    grads_and_vars = self._keras_optimizer._compute_gradients(
       loss,
       var_list,
       grad_loss
@@ -223,7 +232,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
 
     loss = self.apply_before_compute_gradients_hooks(loss)
 
-    grads = self._optimizer.get_gradients(loss, params)
+    grads = self._keras_optimizer.get_gradients(loss, params)
 
     grads_and_vars = list(zip(grads, params))
 
@@ -245,7 +254,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
     )
 
   def _apply_gradients(self, grads, wrapped_vars, name):
-    return self._optimizer.apply_gradients(
+    return self._keras_optimizer.apply_gradients(
       list(zip(grads, wrapped_vars.value)),
       name
     )
@@ -271,7 +280,7 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
     # Note: We must call this cond() in a cross-replica context.
     # DistributionStrategy does not support having a cond in a replica
     # context with a branch that calls `merge_call`, and
-    # self._optimizer.apply_gradients calls `merge_call`.
+    # self._keras_optimizer.apply_gradients calls `merge_call`.
     maybe_apply_op = smart_cond.smart_cond(
       should_apply_bool,
       apply_fn,
@@ -292,43 +301,43 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
 
   @property
   def iterations(self):
-    return self._optimizer.iterations
+    return self._keras_optimizer.iterations
 
   @iterations.setter
   def iterations(self, variable):
-    self._optimizer.iterations = variable
+    self._keras_optimizer.iterations = variable
 
   @property
   def learning_rate(self):
-    return self._optimizer.learning_rate
+    return self._keras_optimizer.learning_rate
 
   @learning_rate.setter
   def learning_rate(self, lr):
-    self._optimizer.learning_rate = lr
+    self._keras_optimizer.learning_rate = lr
 
   @property
   def lr(self):
-    return self._optimizer.lr
+    return self._keras_optimizer.lr
 
   @lr.setter
   def lr(self, lr):
-    self._optimizer.lr = lr
+    self._keras_optimizer.lr = lr
 
   def get_slot_names(self):
-    return self._optimizer.get_slot_names()
+    return self._keras_optimizer.get_slot_names()
 
   def variables(self):
-    return self._optimizer.variables()
+    return self._keras_optimizer.variables()
 
   @property
   def weights(self):
-    return self._optimizer.weights
+    return self._keras_optimizer.weights
 
   def get_weights(self):
-    return self._optimizer.get_weights()
+    return self._keras_optimizer.get_weights()
 
   def set_weights(self, weights):
-    return self._optimizer.set_weights(weights)
+    return self._keras_optimizer.set_weights(weights)
 
   # shortcut to access all underlying optimizers
   @property
@@ -353,10 +362,10 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
   def get_slot(self, var, slot_name):
     # We cannot implement get_slot for the following reason: When saving a
     # checkpoint, two optimizers cannot share slot variables. Since both the
-    # WrappingInterfaceOptimizer and the wrapped optimizer (self and self._optimizer
-    # respectively) are checkpointed, we cannot expose the wrapped
-    # optimizer's slots in the WrappingInterfaceOptimizer. Otherwise,
-    # a checkpoint would believe both optimizers share slot variables.
+    # WrappingInterfaceOptimizer and the wrapped optimizer
+    # (self and self._keras_optimizer respectively) are checkpointed, we cannot
+    # expose the wrapped optimizer's slots in the WrappingInterfaceOptimizer.
+    # Otherwise, a checkpoint would believe both optimizers share slot variables.
     raise AttributeError(
       'You cannot call get_slot on a %s. '
       'This limitation will be removed in the future.' %
@@ -372,12 +381,12 @@ class WrappingInterfaceOptimizer(optimizer_v2.OptimizerV2):
     )
 
   # We do not override some OptimizerV2 methods. For each, we describe why we do
-  # not delegate them to self._optimizer:
+  # not delegate them to self._keras_optimizer:
   # * get_updates: get_updates() calls get_gradients(). Since we override
-  #   get_gradients(), we cannot delegate get_updates() to self._optimizer,
-  #   otherwise the overridden get_gradients() method would not be called.
-  #   Luckily, get_updates() does not access any OptimizerV2 fields, so
-  #   inheriting the OptimizerV2 version works fine.
+  #   get_gradients(), we cannot delegate get_updates() to
+  #   self._keras_optimizer, otherwise the overridden get_gradients() method
+  #   would not be called. Luckily, get_updates() does not access any
+  #   OptimizerV2 fields, so inheriting the OptimizerV2 version works fine.
   # * minimize: We don't delegate for a similar as get_updates(): it calls
   #   both self._compute_gradients() and self.apply_gradients(), and both need
   #   to have the WrappingInterfaceOptimizer version called.
