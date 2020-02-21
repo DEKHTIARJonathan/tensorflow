@@ -21,6 +21,7 @@ import numpy as np
 from tensorflow.python.eager import backprop
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -295,7 +296,15 @@ class DirichletMultinomialTest(test.TestCase):
       for n in ns:
         # n is shape [] and alpha is shape [2].
         dist = ds.DirichletMultinomial(n, alpha)
-        covariance = dist.covariance()
+        # DirichletMultinomial.covariance relies on matmul which might use TF32
+        # on GPUs. Force the tests on CPU until we have per-op TF32 controls.
+        use_cpu = test_util.is_gpu_available(cuda_only=True,
+                                             min_cuda_compute_capability=(8, 0))
+        if use_cpu:
+          with ops.device('/cpu:0'):
+            covariance = dist.covariance()
+        else:
+          covariance = dist.covariance()
         expected_covariance = n * (n + alpha_0) / (1 + alpha_0) * shared_matrix
 
         self.assertEqual([2, 2], covariance.get_shape())

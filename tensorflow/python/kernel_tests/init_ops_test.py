@@ -927,10 +927,13 @@ class ConvolutionDeltaOrthogonalInitializerTest(test.TestCase):
     tol = 1e-5
     with self.session(use_gpu=True):
       for i in range(count):
-        x = variable_scope.get_variable(
-            "{}".format(i),
-            shape=shape,
-            initializer=init_ops.convolutional_delta_orthogonal)
+        # Orthogonal computation relies on matmul which might use TF32 on GPUs.
+        # Force it on CPU until we have per-op TF32 controls.
+        with ops.device('/cpu:0'):
+          x = variable_scope.get_variable(
+              "{}".format(i),
+              shape=shape,
+              initializer=init_ops.convolutional_delta_orthogonal)
         x.initializer.run()
         y = self.evaluate(x)[1, 1, :, :]
         determinant = np.linalg.det(y)
@@ -996,10 +999,13 @@ class ConvolutionOrthogonal1dInitializerTest(test.TestCase):
     tol = 1e-5
     with self.session(use_gpu=True):
       for i in range(count):
-        x = variable_scope.get_variable(
-            "{}".format(i),
-            shape=shape,
-            initializer=init_ops.convolutional_orthogonal_1d)
+        # Orthogonal computation relies on matmul which might use TF32 on GPUs.
+        # Force it on CPU until we have per-op TF32 controls.
+        with ops.device('/cpu:0'):
+          x = variable_scope.get_variable(
+              "{}".format(i),
+              shape=shape,
+              initializer=init_ops.convolutional_orthogonal_1d)
         x.initializer.run()
         y = np.sum(x.eval(), axis=0)
         determinant = np.linalg.det(y)
@@ -1225,10 +1231,13 @@ class ConvolutionOrthogonal3dInitializerTest(test.TestCase):
     tol = 1e-5
     with self.session(use_gpu=True):
       for i in range(count):
-        x = variable_scope.get_variable(
-            "{}".format(i),
-            shape=shape,
-            initializer=init_ops.convolutional_orthogonal_3d)
+        # Orthogonal computation relies on matmul which might use TF32 on GPUs.
+        # Force it on CPU until we have per-op TF32 controls.
+        with ops.device('/cpu:0'):
+          x = variable_scope.get_variable(
+              "{}".format(i),
+              shape=shape,
+              initializer=init_ops.convolutional_orthogonal_3d)
         x.initializer.run()
         y = np.sum(x.eval(), axis=(0, 1, 2))
         determinant = np.linalg.det(y)

@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import errors_impl
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gen_linalg_ops
 from tensorflow.python.ops import math_ops
@@ -36,7 +37,8 @@ class SquareRootOpTest(test.TestCase):
 
     # Verify that matmul(sqrtm(A), sqrtm(A)) = A
     sqrt = gen_linalg_ops.matrix_square_root(matrix)
-    square = math_ops.matmul(sqrt, sqrt)
+    with ops.device("/cpu:0"):
+      square = math_ops.matmul(sqrt, sqrt)
     self.assertShapeEqual(matrix, square)
     self.assertAllClose(matrix, square, rtol=1e-4, atol=1e-3)
 

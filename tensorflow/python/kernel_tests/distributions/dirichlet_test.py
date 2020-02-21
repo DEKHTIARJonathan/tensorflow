@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.python.eager import backprop
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -212,8 +213,17 @@ class DirichletTest(test.TestCase):
     expected_covariance = np.diag(stats.dirichlet.var(alpha))
     expected_covariance += [[0., -2, -3], [-2, 0, -6], [-3, -6, 0]
                            ] / denominator
+    # Dirichlet.covariance relies on matmul which might use TF32 on GPUs. Force
+    # the tests on CPU until we have per-op TF32 controls.
+    use_cpu = test_util.is_gpu_available(cuda_only=True,
+                                         min_cuda_compute_capability=(8, 0))
+    if use_cpu:
+      with ops.device('/cpu:0'):
+        output = dirichlet.covariance()
+    else:
+      output = dirichlet.covariance()
     self.assertAllClose(
-        self.evaluate(dirichlet.covariance()), expected_covariance)
+        self.evaluate(output), expected_covariance)
 
   def testMode(self):
     alpha = np.array([1.1, 2, 3])

@@ -1864,7 +1864,8 @@ class Conv2DTest(test.TestCase):
                                data_format,
                                use_gpu,
                                num_groups=1,
-                               max_err=0.003):
+                               max_err=0.003,
+                               maybe_numerical_cpu=False):
     assert in_depth % num_groups == 0 and out_depth % num_groups == 0
     input_shape = [batch, input_rows, input_cols, in_depth]
     filter_shape = [filter_rows, filter_cols, in_depth // num_groups, out_depth]
@@ -1919,16 +1920,38 @@ class Conv2DTest(test.TestCase):
         if data_format == "NCHW":
           conv = test_util.NCHWToNHWC(conv)
         self.assertEqual(output_shape, conv.get_shape())
+
+        numerical_cpu = (maybe_numerical_cpu if dtype == dtypes.float32 and
+                         use_gpu and data_format == "NHWC" else False)
+        if numerical_cpu:
+          with ops.device("/cpu:0"):
+            conv_cpu = nn_ops.conv2d(
+                new_input_tensor,
+                filter_tensor,
+                strides,
+                new_padding,
+                data_format="NHWC",
+                name="conv")
         if test_input:
           jacob_t, jacob_n = gradient_checker.compute_gradient(input_tensor,
                                                                input_shape,
                                                                conv,
                                                                output_shape)
+          if numerical_cpu:
+            _, jacob_n = gradient_checker.compute_gradient(input_tensor,
+                                                           input_shape,
+                                                           conv_cpu,
+                                                           output_shape)
         else:
           jacob_t, jacob_n = gradient_checker.compute_gradient(filter_tensor,
                                                                filter_shape,
                                                                conv,
                                                                output_shape)
+          if numerical_cpu:
+            _, jacob_n = gradient_checker.compute_gradient(filter_tensor,
+                                                           filter_shape,
+                                                           conv_cpu,
+                                                           output_shape)
         if dtype == dtypes.float32:
           reference_jacob_t = jacob_t
           err = np.fabs(jacob_t - jacob_n).max()
@@ -2190,7 +2213,8 @@ class Conv2DTest(test.TestCase):
           padding="VALID",
           test_input=True,
           data_format=data_format,
-          use_gpu=use_gpu)
+          use_gpu=use_gpu,
+          maybe_numerical_cpu=True)
 
   @test_util.deprecated_graph_mode_only
   def testFilterGradientKernelSizeMatchesInputSize(self):
@@ -2208,7 +2232,8 @@ class Conv2DTest(test.TestCase):
           padding="VALID",
           test_input=False,
           data_format=data_format,
-          use_gpu=use_gpu)
+          use_gpu=use_gpu,
+          maybe_numerical_cpu=True)
 
   @test_util.deprecated_graph_mode_only
   def testInputGradient1x1PaddingStrideOne(self):
