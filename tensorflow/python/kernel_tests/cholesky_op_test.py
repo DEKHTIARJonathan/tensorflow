@@ -106,7 +106,8 @@ class CholeskyOpTest(test.TestCase):
   def _verifyCholesky(self, x):
     # Verify that LL^T == x.
     chol = linalg_ops.cholesky(x)
-    verification = math_ops.matmul(chol, chol, adjoint_b=True)
+    with ops.device("/cpu:0"):
+      verification = math_ops.matmul(chol, chol, adjoint_b=True)
     self._verifyCholeskyBase(x, chol, verification)
 
   @test_util.run_in_graph_and_eager_modes(use_gpu=True)
@@ -282,8 +283,9 @@ class CholeskyGradTest(test.TestCase):
         c = math_ops.reduce_mean(c)
       return c
 
-    theoretical, numerical = gradient_checker_v2.compute_gradient(
-        Compute, [RandomInput()], delta=delta)
+    with ops.device("/cpu:0"):
+      theoretical, numerical = gradient_checker_v2.compute_gradient(
+          Compute, [RandomInput()], delta=delta)
     self.assertAllClose(theoretical, numerical, atol=tol, rtol=tol)
 
   def runFiniteDifferences(self,

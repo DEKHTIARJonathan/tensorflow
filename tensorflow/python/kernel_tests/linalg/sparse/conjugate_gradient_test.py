@@ -21,6 +21,8 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import ops
+from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops.linalg import linalg
 from tensorflow.python.ops.linalg.sparse import conjugate_gradient
@@ -83,13 +85,27 @@ def _get_conjugate_gradient_test(dtype_, use_static_shape_, shape_):
     ]
     cg_results = []
     for preconditioner in preconditioners:
-      cg_graph = conjugate_gradient.conjugate_gradient(
-          operator,
-          rhs,
-          preconditioner=preconditioner,
-          x=x,
-          tol=tol,
-          max_iter=max_iter)
+      # LinearOperator relies on matmul which might use TF32 on GPUs. Force the
+      # tests on CPU until we have per-op TF32 controls.
+      use_cpu = test_util.is_gpu_available(cuda_only=True,
+                                           min_cuda_compute_capability=(8, 0))
+      if use_cpu:
+        with ops.device('/cpu:0'):
+          cg_graph = conjugate_gradient.conjugate_gradient(
+              operator,
+              rhs,
+              preconditioner=preconditioner,
+              x=x,
+              tol=tol,
+              max_iter=max_iter)
+      else:
+        cg_graph = conjugate_gradient.conjugate_gradient(
+            operator,
+            rhs,
+            preconditioner=preconditioner,
+            x=x,
+            tol=tol,
+            max_iter=max_iter)
       cg_val = self.evaluate(cg_graph)
       norm_r0 = np.linalg.norm(rhs_np)
       norm_r = np.linalg.norm(cg_val.r)

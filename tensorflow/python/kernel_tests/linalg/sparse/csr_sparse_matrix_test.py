@@ -23,6 +23,7 @@ import itertools
 import numpy as np
 
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import math_ops
@@ -162,13 +163,14 @@ class SparseMatrixMatmulTest(test.TestCase):
                          1.j * np.random.randn(*dense_shape_b))).astype(dtype)
       a_sm = sparse_csr_matrix_ops.CSRSparseMatrix(a_mats)
       b_sm = sparse_csr_matrix_ops.CSRSparseMatrix(b_mats)
-      c_dense = math_ops.matmul(
-          a_mats,
-          b_mats,
-          transpose_a=transpose_a,
-          transpose_b=transpose_b,
-          adjoint_a=adjoint_a,
-          adjoint_b=adjoint_b)
+      with ops.device("/cpu:0"):
+        c_dense = math_ops.matmul(
+            a_mats,
+            b_mats,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            adjoint_a=adjoint_a,
+            adjoint_b=adjoint_b)
       c_sm = sparse_csr_matrix_ops.matmul(
           a_sm,
           b_sm,
@@ -202,13 +204,14 @@ class SparseMatrixMatmulTest(test.TestCase):
       b_mats = (np.random.randn(*dense_shape_b) +
                 1.j * np.random.randn(*dense_shape_b)).astype(dtype)
       a_sm = sparse_csr_matrix_ops.CSRSparseMatrix(a_mats)
-      c_dense = math_ops.matmul(
-          a_mats,
-          b_mats,
-          transpose_a=transpose_a,
-          transpose_b=transpose_b,
-          adjoint_a=adjoint_a,
-          adjoint_b=adjoint_b)
+      with ops.device("/cpu:0"):
+        c_dense = math_ops.matmul(
+            a_mats,
+            b_mats,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            adjoint_a=adjoint_a,
+            adjoint_b=adjoint_b)
       c_sm_dense = sparse_csr_matrix_ops.matmul(
           a_sm,
           b_mats,
@@ -240,13 +243,14 @@ class SparseMatrixMatmulTest(test.TestCase):
       b_mats = sparsify((np.random.randn(*dense_shape_b) +
                          1.j * np.random.randn(*dense_shape_b))).astype(dtype)
       b_sm = sparse_csr_matrix_ops.CSRSparseMatrix(b_mats)
-      c_dense = math_ops.matmul(
-          a_mats,
-          b_mats,
-          transpose_a=transpose_a,
-          transpose_b=transpose_b,
-          adjoint_a=adjoint_a,
-          adjoint_b=adjoint_b)
+      with ops.device("/cpu:0"):
+        c_dense = math_ops.matmul(
+            a_mats,
+            b_mats,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            adjoint_a=adjoint_a,
+            adjoint_b=adjoint_b)
       c_sm_dense = sparse_csr_matrix_ops.matmul(
           a_mats,
           b_sm,
