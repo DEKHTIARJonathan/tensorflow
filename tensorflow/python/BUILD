@@ -4512,10 +4512,27 @@ cuda_py_test(
 )
 
 cuda_py_test(
+    name = "image_grad_deterministic_test",
+    size = "medium",
+    srcs = ["ops/image_grad_deterministic_test.py"],
+    additional_deps = [
+        ":image_grad_test_base",
+    ],
+)
+
+cuda_py_test(
     name = "image_grad_test",
     size = "medium",
     srcs = ["ops/image_grad_test.py"],
     additional_deps = [
+        ":image_grad_test_base",
+    ],
+)
+
+py_library(
+    name = "image_grad_test_base",
+    srcs = ["ops/image_grad_test_base.py"],
+    deps = [
         ":client_testlib",
         ":framework_for_generated_wrappers",
         ":gradients",
