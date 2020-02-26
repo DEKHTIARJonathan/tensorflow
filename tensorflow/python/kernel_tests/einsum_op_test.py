@@ -172,7 +172,8 @@ class EinsumOpTest(test.TestCase):
       else:
         a = np.einsum(equation, *inputs)
 
-      b = self.evaluate(gen_linalg_ops.einsum(input_tensors, equation))
+      with ops.device("/cpu:0"):
+        b = self.evaluate(gen_linalg_ops.einsum(input_tensors, equation))
       tol = 1e-2 if dtype == bfloat16 else 1e-4
       self.assertAllClose(a, b, atol=tol, rtol=tol)
 

@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes as dtypes_lib
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import linalg_ops
@@ -163,10 +164,11 @@ def _GetEigTest(dtype_, shape_, compute_v_):
       if compute_v_:
         tf_e, tf_v = linalg_ops.eig(constant_op.constant(a))
 
-        # Check that V*diag(E)*V^(-1) is close to A.
-        a_ev = math_ops.matmul(
-            math_ops.matmul(tf_v, array_ops.matrix_diag(tf_e)),
-            linalg_ops.matrix_inverse(tf_v))
+        with ops.device("/cpu:0"):
+          # Check that V*diag(E)*V^(-1) is close to A.
+          a_ev = math_ops.matmul(
+              math_ops.matmul(tf_v, array_ops.matrix_diag(tf_e)),
+              linalg_ops.matrix_inverse(tf_v))
         self.assertAllClose(self.evaluate(a_ev), a, atol=atol)
 
         # Compare to numpy.linalg.eig.
