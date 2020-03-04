@@ -344,49 +344,54 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
   def _apply_options(self):
     """Apply options, such as optimization configuration, to the dataset."""
 
+    # TODO DEKHTIARJonathan: Remove when GPU OP exists
+    if "/device:GPU" in self._variant_tensor.device:
+      return self
+
     dataset = self
     options = self.options()
 
-    # (1) Apply threading options
-    if options.experimental_threading is not None:
-      t_options = options.experimental_threading
-      if t_options.max_intra_op_parallelism is not None:
-        dataset = _MaxIntraOpParallelismDataset(
-            dataset, t_options.max_intra_op_parallelism)
-      if t_options.private_threadpool_size is not None:
-        dataset = _PrivateThreadPoolDataset(dataset,
-                                            t_options.private_threadpool_size)
+    with ops.colocate_with(dataset._variant_tensor):
+      # (1) Apply threading options
+      if options.experimental_threading is not None:
+        t_options = options.experimental_threading
+        if t_options.max_intra_op_parallelism is not None:
+          dataset = _MaxIntraOpParallelismDataset(
+              dataset, t_options.max_intra_op_parallelism)
+        if t_options.private_threadpool_size is not None:
+          dataset = _PrivateThreadPoolDataset(dataset,
+                                              t_options.private_threadpool_size)
 
-    # (2) Apply graph rewrite options
-    # pylint: disable=protected-access
-    graph_rewrites = options._graph_rewrites()
-    graph_rewrite_configs = options._graph_rewrite_configs()
-    # pylint: enable=protected-access
-    if graph_rewrites:
-      if self._has_captured_ref():
-        warnings.warn(
-            "tf.data graph rewrites are not compatible with tf.Variable. "
-            "The following rewrites will be disabled: %s. To enable "
-            "rewrites, use resource variables instead by calling "
-            "`tf.enable_resource_variables()` at the start of the program." %
-            ", ".join(graph_rewrites))
-      else:
-        dataset = _OptimizeDataset(dataset, graph_rewrites,
-                                   graph_rewrite_configs)
+      # (2) Apply graph rewrite options
+      # pylint: disable=protected-access
+      graph_rewrites = options._graph_rewrites()
+      graph_rewrite_configs = options._graph_rewrite_configs()
+      # pylint: enable=protected-access
+      if graph_rewrites:
+        if self._has_captured_ref():
+          warnings.warn(
+              "tf.data graph rewrites are not compatible with tf.Variable. "
+              "The following rewrites will be disabled: %s. To enable "
+              "rewrites, use resource variables instead by calling "
+              "`tf.enable_resource_variables()` at the start of the program." %
+              ", ".join(graph_rewrites))
+        else:
+          dataset = _OptimizeDataset(dataset, graph_rewrites,
+                                     graph_rewrite_configs)
 
-    # (3) Apply autotune options
-    autotune, algorithm, cpu_budget = options._autotune_settings()  # pylint: disable=protected-access
+      # (3) Apply autotune options
+      autotune, algorithm, cpu_budget = options._autotune_settings()  # pylint: disable=protected-access
 
-    if autotune:
-      dataset = _ModelDataset(dataset, algorithm, cpu_budget)
+      if autotune:
+        dataset = _ModelDataset(dataset, algorithm, cpu_budget)
 
-    # (4) Apply stats aggregator options
-    if options.experimental_stats and options.experimental_stats.aggregator:  # pylint: disable=line-too-long
-      dataset = _SetStatsAggregatorDataset(  # pylint: disable=protected-access
-          dataset, options.experimental_stats.aggregator,
-          options.experimental_stats.prefix,
-          options.experimental_stats.counter_prefix)
-    return dataset
+      # (4) Apply stats aggregator options
+      if options.experimental_stats and options.experimental_stats.aggregator:  # pylint: disable=line-too-long
+        dataset = _SetStatsAggregatorDataset(  # pylint: disable=protected-access
+            dataset, options.experimental_stats.aggregator,
+            options.experimental_stats.prefix,
+            options.experimental_stats.counter_prefix)
+      return dataset
 
   def __iter__(self):
     """Creates an `Iterator` for enumerating the elements of this dataset.
@@ -2194,14 +2199,17 @@ class DatasetV1(DatasetV2):
     dataset = self._apply_options()
     if shared_name is None:
       shared_name = ""
-    iterator_resource = gen_dataset_ops.iterator_v2(
+
+    with ops.colocate_with(self._variant_tensor):
+      iterator_resource = gen_dataset_ops.iterator_v2(
         container="", shared_name=shared_name, **self._flat_structure)
-    with ops.colocate_with(iterator_resource):
+
       initializer = gen_dataset_ops.make_iterator(
           dataset._variant_tensor,  # pylint: disable=protected-access
           iterator_resource)
-    # pylint: disable=protected-access
-    return iterator_ops.Iterator(
+
+      # pylint: disable=protected-access
+      return iterator_ops.Iterator(
         iterator_resource, initializer, get_legacy_output_types(dataset),
         get_legacy_output_shapes(dataset), get_legacy_output_classes(dataset))
 
@@ -4273,11 +4281,14 @@ class PrefetchDataset(UnaryUnchangedStructureDataset):
       buffer_size = -1  # This is the sentinel for auto-tuning.
     self._buffer_size = ops.convert_to_tensor(
         buffer_size, dtype=dtypes.int64, name="buffer_size")
-    variant_tensor = gen_dataset_ops.prefetch_dataset(
-        input_dataset._variant_tensor,  # pylint: disable=protected-access
-        buffer_size=self._buffer_size,
-        slack_period=slack_period,
-        **self._flat_structure)
+    
+    with ops.colocate_with(input_dataset._variant_tensor):
+        variant_tensor = gen_dataset_ops.prefetch_dataset(
+            input_dataset._variant_tensor,  # pylint: disable=protected-access
+            buffer_size=self._buffer_size,
+            slack_period=slack_period,
+            **self._flat_structure)
+            
     super(PrefetchDataset, self).__init__(input_dataset, variant_tensor)
 
 
