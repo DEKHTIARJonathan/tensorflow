@@ -269,6 +269,8 @@ class CuptiTracer {
 
   bool activity_tracing_enabled_ = false;
 
+  bool subscriber_existed_ = false;
+
   std::unique_ptr<CuptiDriverApiHook> cupti_driver_api_hook_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(CuptiTracer);
