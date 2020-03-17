@@ -1244,7 +1244,8 @@ absl::string_view AnnotationMap::LookUp(uint32 device_id,
 }
 
 bool CuptiTracer::IsAvailable() const {
-  return !activity_tracing_enabled_ && !api_tracing_enabled_;
+  return !subscriber_existed_ && !activity_tracing_enabled_ &&
+         !api_tracing_enabled_;
 }
 
 int CuptiTracer::NumGpus() {
@@ -1278,24 +1279,26 @@ void CuptiTracer::Enable(const CuptiTracerOptions &option,
   }
 
   EnableApiTracing().IgnoreError();
-  if (option_->enable_activity_api) {
+  if (!subscriber_existed_ && option_->enable_activity_api) {
     EnableActivityTracing().IgnoreError();
   }
 }
 
 void CuptiTracer::Disable() {
-  DisableApiTracing().IgnoreError();
-  if (option_->enable_activity_api) {
-    DisableActivityTracing().IgnoreError();
+  if (!subscriber_existed_) {
+    DisableApiTracing().IgnoreError();
+    if (option_->enable_activity_api) {
+      DisableActivityTracing().IgnoreError();
+    }
+    cupti_interface_->CleanUp();
+    Finalize().IgnoreError();
+    cupti_driver_api_hook_->Flush().IgnoreError();
+    collector_->Flush();
+    collector_ = nullptr;
+    option_.reset();
+    cupti_driver_api_hook_.reset();
+    annotation_map_.reset();
   }
-  cupti_interface_->CleanUp();
-  Finalize().IgnoreError();
-  cupti_driver_api_hook_->Flush().IgnoreError();
-  collector_->Flush();
-  collector_ = nullptr;
-  option_.reset();
-  cupti_driver_api_hook_.reset();
-  annotation_map_.reset();
 }
 
 Status CuptiTracer::EnableApiTracing() {
@@ -1303,8 +1306,21 @@ Status CuptiTracer::EnableApiTracing() {
   api_tracing_enabled_ = true;
 
   VLOG(1) << "Enable subscriber";
-  RETURN_IF_CUPTI_ERROR(cupti_interface_->Subscribe(
-      &subscriber_, (CUpti_CallbackFunc)ApiCallback, this));
+  CUptiResult status = cupti_interface_->Subscribe(
+      &subscriber_, (CUpti_CallbackFunc)ApiCallback, this);
+  if (status != CUPTI_SUCCESS) {
+    const char *errstr = "";
+    cupti_interface_->GetResultString(status, &errstr);
+    if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
+      subscriber_existed_ = true;
+      LOG(WARNING) << "function cupti_interface_->Subscribe failed with error "
+                   << errstr << " and TF CUPTI tracing will be ignored.\n";
+    } else {
+      LOG(ERROR) << "function cupti_interface_->Subscribe failed with error "
+                 << errstr;
+    }
+    return errors::Internal(absl::StrCat("cutpi call error", errstr));
+  }
 
   if (!option_->cbids_selected.empty()) {
     for (auto cbid : option_->cbids_selected) {
