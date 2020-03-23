@@ -112,7 +112,7 @@ const char *getActivityUnifiedMemoryKindString(
       const char *errstr = "";                                              \
       cupti_interface_->GetResultString(status, &errstr);                   \
       LOG(ERROR) << "function " << #expr << "failed with error " << errstr; \
-      return errors::Internal(absl::StrCat("cutpi call error", errstr));    \
+      return errors::Internal(absl::StrCat("cupti call error", errstr));    \
     }                                                                       \
   } while (false)
 
@@ -1319,7 +1319,7 @@ Status CuptiTracer::EnableApiTracing() {
       LOG(ERROR) << "function cupti_interface_->Subscribe failed with error "
                  << errstr;
     }
-    return errors::Internal(absl::StrCat("cutpi call error", errstr));
+    return errors::Internal(absl::StrCat("cupti call error", errstr));
   }
 
   if (!option_->cbids_selected.empty()) {
