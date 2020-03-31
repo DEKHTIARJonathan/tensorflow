@@ -141,6 +141,8 @@ class LossScaleOptimizer(optimizer_v2.OptimizerV2):
 
     # Needed because the superclass's __getattribute__ checks this.
     self._hyper = {}
+    self._slots = {}
+    self._deferred_slot_restorations = {}
 
   @property
   def loss_scale(self):
