@@ -52,7 +52,7 @@ class QrOpTest(xla_test.XLATestCase, parameterized.TestCase):
     sum_of_ratios = np.sum(np.divide(y, x), -2, keepdims=True)
     phases = np.divide(sum_of_ratios, np.abs(sum_of_ratios))
     x *= phases
-    self.assertTrue(np.all(self.AdjustedNorm(x - y) < 800.0))
+    self.assertTrue(np.all(self.AdjustedNorm(x - y) < 1000.0))
 
   def CheckApproximation(self, a, q, r):
     # Tests that a ~= q*r.
