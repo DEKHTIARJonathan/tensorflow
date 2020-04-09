@@ -294,6 +294,7 @@ Status XlaCompilationCache::CompileImpl(
         cluster_compile_stats_.emplace(function.name(), ClusterCompileStats{})
             .first;
 
+    it->second.execution_count++;
     // The is_megamorphic bit is "sticky".  We assume clusters that have been
     // observed to be megamorphic once stay megamorphic forever.
     if (!it->second.is_megamorphic &&
