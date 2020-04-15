@@ -219,17 +219,20 @@ def _find_library(base_paths, library_name, required_version):
   return _find_file(base_paths, _library_paths(), filepattern)
 
 
-def _find_versioned_file(base_paths, relative_paths, filepattern,
+def _find_versioned_file(base_paths, relative_paths, filepatterns,
                          required_version, get_version):
   """Returns first valid path to a file that matches the requested version."""
+  if type(filepatterns) not in [list, tuple]:
+    filepatterns = [filepatterns]
   for path in _cartesian_product(base_paths, relative_paths):
-    for file in glob.glob(os.path.join(path, filepattern)):
-      actual_version = get_version(file)
-      if _matches_version(actual_version, required_version):
-        return file, actual_version
+    for filepattern in filepatterns:
+      for file in glob.glob(os.path.join(path, filepattern)):
+        actual_version = get_version(file)
+        if _matches_version(actual_version, required_version):
+          return file, actual_version
   raise _not_found_error(
       base_paths, relative_paths,
-      filepattern + " matching version '%s'" % required_version)
+      ", ".join(filepatterns) + " matching version '%s'" % required_version)
 
 
 def _find_header(base_paths, header_name, required_version, get_version):
@@ -429,7 +432,8 @@ def _find_cudnn_config(base_paths, required_version):
         for name in ("CUDNN_MAJOR", "CUDNN_MINOR", "CUDNN_PATCHLEVEL"))
     return ".".join(version)
 
-  header_path, header_version = _find_header(base_paths, "cudnn.h",
+  header_path, header_version = _find_header(base_paths,
+                                             ("cudnn.h", "cudnn_version.h"),
                                              required_version,
                                              get_header_version)
   cudnn_version = header_version.split(".")[0]
