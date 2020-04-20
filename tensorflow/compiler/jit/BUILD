@@ -600,6 +600,7 @@ cc_library(
         "mark_for_compilation_pass_test_helper.cc",
         "partially_decluster_pass.cc",
         "report_clustering_info_pass.cc",
+        "async_io_conversion_pass.cc",
     ],
     hdrs = [
         "build_xla_ops_pass.h",
@@ -616,6 +617,7 @@ cc_library(
         "mark_for_compilation_pass_test_helper.h",
         "partially_decluster_pass.h",
         "report_clustering_info_pass.h",
+        "async_io_conversion_pass.h",
     ],
     deps = [
         "compilability_check_util",
@@ -635,6 +637,7 @@ cc_library(
         "//tensorflow/cc:scope_internal",
         "//tensorflow/compiler/jit/graphcycles",
         "//tensorflow/compiler/jit/ops:xla_ops",
+        "//tensorflow/compiler/jit/ops:async_io_ops",
         "//tensorflow/compiler/tf2xla:resource_operation_table",
         "//tensorflow/compiler/tf2xla:side_effect_util",
         "//tensorflow/compiler/tf2xla:tf2xla_util",
@@ -772,6 +775,7 @@ tf_cc_test(
     name = "compilation_passes_test",
     size = "small",
     srcs = [
+        "async_io_conversion_pass_test.cc",
         "build_xla_ops_pass_test.cc",
         "clone_constants_for_better_clustering_test.cc",
         "cluster_scoping_pass_test.cc",
