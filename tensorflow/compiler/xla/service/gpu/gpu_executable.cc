@@ -510,6 +510,20 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStream(
         }
       }
     }
+  // Also put all input operands of AsyncOutSend into buffers_in_result to
+  // prevent XLA from releasing the buffers.
+  for (auto* instr : hlo_module_->entry_computation()->instructions()) {
+    if (instr->opcode() != HloOpcode::kAsyncOutSend) {
+      continue;
+    }
+    const HloInstruction* opnd = instr->operand(0);
+    TF_ASSIGN_OR_RETURN(const BufferAllocation::Slice slice,
+                        this->assignment_->GetUniqueSlice(opnd, {}));
+    se::DeviceMemoryBase src_base =
+        buffer_allocations.GetDeviceAddress(slice.index());
+    CHECK(!src_base.is_null() || src_base.size() == 0);
+    buffers_in_result.insert(src_base);
+  }
 
     if (result_buffer.is_null()) {
       // The source instruction should have a non-parameter buffer
