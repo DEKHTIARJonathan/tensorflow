@@ -2070,7 +2070,8 @@ absl::flat_hash_set<string> GetKnownXLAWhitelistOp() {
                                      "_Arg",
                                      "_ArrayToList",
                                      "_ListToArray",
-                                     "_Retval"};
+                                     "_Retval",
+                                     "_XlaAsyncOutSend"};
   return result;
 }
 

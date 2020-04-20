@@ -1741,6 +1741,21 @@ class HloRngGetAndUpdateStateInstruction : public HloInstruction {
   int64 delta_;
 };
 
+class HloAsyncOutSendInstruction : public HloInstruction {
+ public:
+  explicit HloAsyncOutSendInstruction(const Shape& async_out_send_shape,
+                                      HloInstruction* operand,
+                                      const string& rendezvous_key);
+
+  const Shape& async_out_send_shape() const { return async_out_send_shape_; }
+  const string& rendezvous_key() const { return rendezvous_key_; }
+
+  // Shape of AsyncOutSend.
+  Shape async_out_send_shape_;
+  // Key for rendezvous with AsyncOutRecv.
+  string rendezvous_key_;
+};
+
 class HloRngBitGeneratorInstruction : public HloInstruction {
  public:
   HloRngBitGeneratorInstruction(const Shape& shape, HloInstruction* state,

@@ -379,6 +379,9 @@ class XlaBuilder {
     return Parameter(parameter_number, shape, name, empty_bools);
   }
 
+  XlaOp AsyncOutSend(const XlaOp& operand, const Shape& shape_with_layout,
+                     const string& rendezvous_key);
+
   XlaOp ConstantLiteral(const LiteralSlice& literal);
 
   XlaOp Broadcast(XlaOp operand, absl::Span<const int64> broadcast_sizes);
@@ -1055,6 +1058,9 @@ class XlaBuilder {
 
   friend XlaOp GetDimensionSize(XlaOp operand, int64 dimension);
   friend XlaOp SetDimensionSize(XlaOp operand, XlaOp val, int64 dimension);
+
+  friend XlaOp AsyncOutSend(XlaOp operand, const Shape& shape_with_layout,
+                            const string& rendezvous_key);
 
  private:
   XlaOp ConditionalImpl(
@@ -2033,6 +2039,9 @@ XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
 XlaOp GetDimensionSize(XlaOp operand, int64 dimension);
 
 XlaOp SetDimensionSize(XlaOp operand, XlaOp val, int64 dimension);
+
+XlaOp AsyncOutSend(XlaOp operand, const Shape& shape_with_layout,
+                   const string& rendezvous_key);
 
 // Implementation details below this point.
 //
