@@ -229,6 +229,8 @@ class CuptiTracer {
   // Only one profile session can be live in the same time.
   bool IsAvailable() const;
 
+  bool ExternalProfilerInUse() const;
+
   void Enable(const CuptiTracerOptions& option, CuptiTraceCollector* collector);
   void Disable();
 
