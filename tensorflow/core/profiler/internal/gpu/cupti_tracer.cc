@@ -112,7 +112,7 @@ const char *getActivityUnifiedMemoryKindString(
       const char *errstr = "";                                              \
       cupti_interface_->GetResultString(status, &errstr);                   \
       LOG(ERROR) << "function " << #expr << "failed with error " << errstr; \
-      return errors::Internal(absl::StrCat("cupti call error", errstr));    \
+      return errors::Internal(absl::StrCat("cutpi call error", errstr));    \
     }                                                                       \
   } while (false)
 
@@ -1244,8 +1244,25 @@ absl::string_view AnnotationMap::LookUp(uint32 device_id,
 }
 
 bool CuptiTracer::IsAvailable() const {
-  return !subscriber_existed_ && !activity_tracing_enabled_ &&
-         !api_tracing_enabled_;
+  return !activity_tracing_enabled_ && !api_tracing_enabled_;
+}
+
+bool CuptiTracer::ExternalProfilerInUse() const {
+  CUpti_SubscriberHandle local_subscriber_;
+  VLOG(1) << "Detecting multiple subscribers";
+  CUptiResult status = cupti_interface_->Subscribe(
+      &local_subscriber_, (CUpti_CallbackFunc)nullptr, nullptr);
+  if (status == CUPTI_ERROR_MULTIPLE_SUBSCRIBERS_NOT_SUPPORTED) {
+    VLOG(1) << "Found existing subscribers";
+    return true;
+  } else if (status == CUPTI_SUCCESS) {
+    CUptiResult ret = cupti_interface_->Unsubscribe(local_subscriber_);
+    if (ret != CUPTI_SUCCESS) {
+      LOG(ERROR) << "Failed to unsubscribe detecting subscriber";
+    }
+  }
+  VLOG(1) << "Found no existing subscribers";
+  return false;
 }
 
 int CuptiTracer::NumGpus() {
@@ -1279,26 +1296,24 @@ void CuptiTracer::Enable(const CuptiTracerOptions &option,
   }
 
   EnableApiTracing().IgnoreError();
-  if (!subscriber_existed_ && option_->enable_activity_api) {
+  if (option_->enable_activity_api) {
     EnableActivityTracing().IgnoreError();
   }
 }
 
 void CuptiTracer::Disable() {
-  if (!subscriber_existed_) {
-    DisableApiTracing().IgnoreError();
-    if (option_->enable_activity_api) {
-      DisableActivityTracing().IgnoreError();
-    }
-    cupti_interface_->CleanUp();
-    Finalize().IgnoreError();
-    cupti_driver_api_hook_->Flush().IgnoreError();
-    collector_->Flush();
-    collector_ = nullptr;
-    option_.reset();
-    cupti_driver_api_hook_.reset();
-    annotation_map_.reset();
+  DisableApiTracing().IgnoreError();
+  if (option_->enable_activity_api) {
+    DisableActivityTracing().IgnoreError();
   }
+  cupti_interface_->CleanUp();
+  Finalize().IgnoreError();
+  cupti_driver_api_hook_->Flush().IgnoreError();
+  collector_->Flush();
+  collector_ = nullptr;
+  option_.reset();
+  cupti_driver_api_hook_.reset();
+  annotation_map_.reset();
 }
 
 Status CuptiTracer::EnableApiTracing() {
@@ -1306,21 +1321,8 @@ Status CuptiTracer::EnableApiTracing() {
   api_tracing_enabled_ = true;
 
   VLOG(1) << "Enable subscriber";
-  CUptiResult status = cupti_interface_->Subscribe(
-      &subscriber_, (CUpti_CallbackFunc)ApiCallback, this);
-  if (status != CUPTI_SUCCESS) {
-    const char *errstr = "";
-    cupti_interface_->GetResultString(status, &errstr);
-    if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
-      subscriber_existed_ = true;
-      LOG(WARNING) << "function cupti_interface_->Subscribe failed with error "
-                   << errstr << " and TF CUPTI tracing will be ignored.\n";
-    } else {
-      LOG(ERROR) << "function cupti_interface_->Subscribe failed with error "
-                 << errstr;
-    }
-    return errors::Internal(absl::StrCat("cupti call error", errstr));
-  }
+  RETURN_IF_CUPTI_ERROR(cupti_interface_->Subscribe(
+      &subscriber_, (CUpti_CallbackFunc)ApiCallback, this));
 
   if (!option_->cbids_selected.empty()) {
     for (auto cbid : option_->cbids_selected) {
@@ -1426,7 +1428,7 @@ Status CuptiTracer::HandleCallback(CUpti_CallbackDomain domain,
     // API callback is called before any CUDA context is created.
     // This is expected to be rare, and we ignore this case.
     VLOG(3) << "API callback received before creation of CUDA context\n";
-    return errors::Internal("cutpi callback without context");
+    return errors::Internal("cupti callback without context");
   }
 
   // Grab a correct device ID.

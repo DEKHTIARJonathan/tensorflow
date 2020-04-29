@@ -229,6 +229,8 @@ class CuptiTracer {
   // Only one profile session can be live in the same time.
   bool IsAvailable() const;
 
+  bool ExternalProfilerInUse() const;
+
   void Enable(const CuptiTracerOptions& option, CuptiTraceCollector* collector);
   void Disable();
 
@@ -268,8 +270,6 @@ class CuptiTracer {
   CUpti_SubscriberHandle subscriber_;  // valid when api_tracing_enabled_.
 
   bool activity_tracing_enabled_ = false;
-
-  bool subscriber_existed_ = false;
 
   std::unique_ptr<CuptiDriverApiHook> cupti_driver_api_hook_;
 

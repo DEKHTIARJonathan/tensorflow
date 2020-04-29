@@ -65,6 +65,11 @@ class ProfilerInterface {
 
   // Which device this ProfilerInterface is used for.
   virtual DeviceType GetDeviceType() = 0;
+
+  // Finds if external profiler that prevents internal profiling exists.
+  virtual bool ExternalProfilerInUse() {
+    return false;
+  } 
 };
 
 }  // namespace profiler

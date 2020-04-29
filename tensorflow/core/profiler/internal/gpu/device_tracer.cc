@@ -237,7 +237,7 @@ class GpuTracer : public profiler::ProfilerInterface {
   profiler::DeviceType GetDeviceType() override {
     return profiler::DeviceType::kGpu;
   }
-
+  bool ExternalProfilerInUse() override;
  private:
   Status DoStart();
   Status DoStop();
@@ -373,6 +373,13 @@ Status GpuTracer::CollectData(RunMetadata* run_metadata) {
     }
   }
   return errors::Internal("Invalid profiling state: ", profiling_state_);
+}
+
+bool GpuTracer::ExternalProfilerInUse() {
+  if (cupti_tracer_->ExternalProfilerInUse()) {
+    return true;
+  }
+  return false;
 }
 
 }  // namespace profiler

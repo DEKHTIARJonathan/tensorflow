@@ -227,12 +227,23 @@ ProfilerSession::ProfilerSession(const profiler::ProfilerOptions& options)
   CreateProfilers(options, &profilers_);
   status_ = Status::OK();
 
+  bool external_profiler = false;
   for (auto& profiler : profilers_) {
-    auto start_status = profiler->Start();
-    if (!start_status.ok()) {
-      LOG(WARNING) << "Encountered error while starting profiler: "
-                   << start_status.ToString();
+    if (profiler->ExternalProfilerInUse()) {
+      external_profiler = true;
     }
+  }
+  if (!external_profiler) {
+    for (auto& profiler : profilers_) {
+      auto start_status = profiler->Start();
+      if (!start_status.ok()) {
+        LOG(WARNING) << "Encountered error while starting profiler: "
+                     << start_status.ToString();
+      }
+    }
+  } else {
+    LOG(WARNING) << "TensorFlow profiling disabled because an external profiler"
+                 << " is already in use.";
   }
 }
 
