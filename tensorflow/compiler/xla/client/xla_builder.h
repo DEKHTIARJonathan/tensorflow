@@ -702,14 +702,15 @@ class XlaBuilder {
                       const ChannelHandle& handle);
 
   XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                          float epsilon, int64 feature_index);
+                          float epsilon, int64 feature_index,
+                          size_t reserve_space_size, bool use_reserve_space);
 
   XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset, XlaOp mean,
                            XlaOp variance, float epsilon, int64 feature_index);
 
   XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
-                      XlaOp batch_var, XlaOp grad_output, float epsilon,
-                      int64 feature_index);
+                      XlaOp batch_var, XlaOp grad_output, XlaOp reserve_space,
+                      float epsilon, int64 feature_index);
 
   XlaOp GetDimensionSize(XlaOp operand, int64 dimension);
 
@@ -1138,12 +1139,15 @@ class XlaBuilder {
   friend XlaOp Recv(XlaBuilder* builder, const Shape& shape,
                     const ChannelHandle& handle);
   friend XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                                 float epsilon, int64 feature_index);
+                                 float epsilon, int64 feature_index,
+                                 size_t reserve_space_size,
+                                 bool use_reserve_space);
   friend XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset,
                                   XlaOp mean, XlaOp variance, float epsilon,
                                   int64 feature_index);
   friend XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
-                             XlaOp batch_var, XlaOp grad_output, float epsilon,
+                             XlaOp batch_var, XlaOp grad_output,
+                             XlaOp reserve_space, float epsilon,
                              int64 feature_index);
   friend XlaOp SendWithToken(XlaOp operand, XlaOp token,
                              const ChannelHandle& handle);
@@ -2132,7 +2136,8 @@ XlaOp AfterAll(XlaBuilder* builder, absl::Span<const XlaOp> tokens);
 // is the normalized result and batch_mean and batch_var are the mean and
 // variance, respectively, across batch for the operand.
 XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset, float epsilon,
-                        int64 feature_index);
+                        int64 feature_index, size_t reserve_space_size,
+                        bool use_reserve_space);
 
 // Normalizes operand across spatial and batch dimensions for each feature.
 //
@@ -2157,8 +2162,8 @@ XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset, XlaOp mean,
 //   - grad_offset: Gradient with respect to input `offset`
 //   - grad_scale: Gradient with respect to input `scale`
 XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
-                    XlaOp batch_var, XlaOp grad_output, float epsilon,
-                    int64 feature_index);
+                    XlaOp batch_var, XlaOp grad_output, XlaOp reserve_space,
+                    float epsilon, int64 feature_index);
 
 // Returns the size of the given dimension of the operand. The operand must be
 // array shaped.
