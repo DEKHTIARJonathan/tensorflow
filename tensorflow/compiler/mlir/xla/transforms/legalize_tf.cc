@@ -1429,6 +1429,7 @@ class ConvertFusedBatchNormGradBase
     Value scale = op.scale();
     Value mean = op.reserve_space_1();
     Value var = op.reserve_space_2();
+    Value reserve_space = op.reserve_space_3();
 
     // TODO(b/141785544): Update this to not require static shapes.
     // activation shape needs to be static to convert negative indices in
@@ -1459,7 +1460,7 @@ class ConvertFusedBatchNormGradBase
           {act.getType(), feature_type, feature_type}, rewriter.getContext());
 
       auto training_op = rewriter.create<BatchNormGradOp>(
-          loc, result_type, act, scale, mean, var, grad, op.epsilon(),
+          loc, result_type, act, scale, mean, var, grad, reserve_space, op.epsilon(),
           feature_dim_attr.getValue());
 
       x_backprop =
@@ -1580,7 +1581,8 @@ class ConvertFusedBatchNormV3Op
 
       auto bn_train_op = rewriter.create<xla_hlo::BatchNormTrainingOp>(
           op.getLoc(), result_type, bn_train_input, op.scale(), op.offset(),
-          op.epsilon(), feature_dim.getValue());
+          op.epsilon(), feature_dim.getValue(),
+	  llvm::APInt(64, 0), false);
       // HLO op outputs a tuple of tensors. Extract those results.
       auto bn_train_op_result = bn_train_op.getResult();
       Value y_out = rewriter.create<xla_hlo::GetTupleElementOp>(
@@ -1590,6 +1592,8 @@ class ConvertFusedBatchNormV3Op
       Value reserve_space_1 = batch_mean;
       Value batch_variance = rewriter.create<xla_hlo::GetTupleElementOp>(
           op.getLoc(), bn_train_op_result, 2);
+      Value reserve_space = rewriter.create<xla_hlo::GetTupleElementOp>(
+          op.getLoc(), bn_train_op_result, 3);
 
       // Apply Bessel's correction on the variance.
       int total_input_size = bn_train_input_type_tensor.getNumElements();
@@ -1655,7 +1659,7 @@ class ConvertFusedBatchNormV3Op
                               /*batch_variance=*/corrected_variance,
                               /*reserve_space_1=*/reserve_space_1,
                               /*reserve_space_2=*/batch_variance,
-                              /*reserve_space_3=*/op.x()});
+                              /*reserve_space_3=*/reserve_space});
     } else {  // Inference case.
       auto bn_train_op = rewriter.create<BatchNormInferenceOp>(
           op.getLoc(),

@@ -752,6 +752,7 @@ def HLO_BatchNormGradOp : HLO_Op<"batch_norm_grad", [NoSideEffect]>,
     HLO_Tensor:$mean,
     HLO_Tensor:$variance,
     HLO_Tensor:$grad_output,
+    HLO_Tensor:$reserve_space,
     F32Attr:$epsilon,
     I64Attr:$feature_index
   );
@@ -783,7 +784,9 @@ def HLO_BatchNormTrainingOp : HLO_Op<"batch_norm_training", [NoSideEffect]>,
     HLO_Tensor:$scale,
     HLO_Tensor:$offset,
     F32Attr:$epsilon,
-    I64Attr:$feature_index
+    I64Attr:$feature_index,
+    I64Attr:$reserve_space_size,
+    BoolAttr:$use_reserve_space
   );
 
   let results = (outs HLO_Tuple);
