@@ -2031,7 +2031,9 @@ XlaOp XlaBuilder::ReduceWindowWithGeneralPadding(
 }
 
 XlaOp XlaBuilder::BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                                    float epsilon, int64 feature_index) {
+                                    float epsilon, int64 feature_index,
+                                    size_t reserve_space_size,
+                                    bool use_reserve_space) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     HloInstructionProto instr;
 
@@ -2039,9 +2041,9 @@ XlaOp XlaBuilder::BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
     TF_ASSIGN_OR_RETURN(const Shape* scale_shape, GetShapePtr(scale));
     TF_ASSIGN_OR_RETURN(const Shape* offset_shape, GetShapePtr(offset));
     TF_ASSIGN_OR_RETURN(
-        Shape shape,
-        ShapeInference::InferBatchNormTrainingShape(
-            *operand_shape, *scale_shape, *offset_shape, feature_index));
+        Shape shape, ShapeInference::InferBatchNormTrainingShape(
+                         *operand_shape, *scale_shape, *offset_shape,
+                         feature_index, reserve_space_size, use_reserve_space));
     *instr.mutable_shape() = shape.ToProto();
 
     instr.set_epsilon(epsilon);
@@ -2079,7 +2081,8 @@ XlaOp XlaBuilder::BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset,
 
 XlaOp XlaBuilder::BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
                                 XlaOp batch_var, XlaOp grad_output,
-                                float epsilon, int64 feature_index) {
+                                XlaOp reserve_space, float epsilon,
+                                int64 feature_index) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     HloInstructionProto instr;
 
@@ -2097,9 +2100,13 @@ XlaOp XlaBuilder::BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
 
     instr.set_epsilon(epsilon);
     instr.set_feature_index(feature_index);
-
+    std::vector<XlaOp> operands = {operand, scale, batch_mean, batch_var,
+                                   grad_output};
+    if (!reserve_space.IsUninitialized()) {
+      operands.push_back(reserve_space);
+    }
     return AddInstruction(std::move(instr), HloOpcode::kBatchNormGrad,
-                          {operand, scale, batch_mean, batch_var, grad_output});
+                          operands);
   });
 }
 
@@ -3587,10 +3594,11 @@ XlaOp AfterAll(XlaBuilder* builder, absl::Span<const XlaOp> tokens) {
 }
 
 XlaOp BatchNormTraining(const XlaOp operand, const XlaOp scale,
-                        const XlaOp offset, float epsilon,
-                        int64 feature_index) {
+                        const XlaOp offset, float epsilon, int64 feature_index,
+                        size_t reserve_space_size, bool use_reserve_space) {
   return operand.builder()->BatchNormTraining(operand, scale, offset, epsilon,
-                                              feature_index);
+                                              feature_index, reserve_space_size,
+                                              use_reserve_space);
 }
 
 XlaOp BatchNormInference(const XlaOp operand, const XlaOp scale,
@@ -3603,10 +3611,11 @@ XlaOp BatchNormInference(const XlaOp operand, const XlaOp scale,
 
 XlaOp BatchNormGrad(const XlaOp operand, const XlaOp scale,
                     const XlaOp batch_mean, const XlaOp batch_var,
-                    const XlaOp grad_output, float epsilon,
-                    int64 feature_index) {
+                    const XlaOp grad_output, const XlaOp reserve_space,
+                    float epsilon, int64 feature_index) {
   return operand.builder()->BatchNormGrad(operand, scale, batch_mean, batch_var,
-                                          grad_output, epsilon, feature_index);
+                                          grad_output, reserve_space, epsilon,
+                                          feature_index);
 }
 
 XlaOp Iota(XlaBuilder* builder, PrimitiveType type, int64 size) {
