@@ -2677,7 +2677,7 @@ void IrEmitterUnnested::EmitHlo021Tile(
                                      /*num_threads_y=*/kNumRows,
                                      /*num_threads_x=*/kWarpSize,
                                      /*is_dilated_x=*/false,
-                                     /*row_contiguous=*/false);
+                                     /*is_row_contiguous=*/false);
   LaunchDimensions launch_dimensions(mapping_scheme.GetNumberOfBlocks(),
                                      mapping_scheme.GetThreadsPerBlock());
   llvm::Type* index_type =
