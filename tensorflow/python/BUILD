@@ -4891,7 +4891,7 @@ cuda_py_test(
     size = "medium",
     srcs = ["ops/image_grad_deterministic_test.py"],
     python_version = "PY3",
-    additional_deps = [
+    deps = [
         ":image_grad_test_base",
     ],
 )
@@ -4901,7 +4901,7 @@ cuda_py_test(
     size = "medium",
     srcs = ["ops/image_grad_test.py"],
     python_version = "PY3",
-    additional_deps = [
+    deps = [
         ":image_grad_test_base",
     ],
 )
