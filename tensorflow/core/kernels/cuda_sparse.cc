@@ -205,6 +205,7 @@ Status GpuSparse::Initialize() {
 // Check the actual declarations in the cusparse.h header file.
 //=============================================================================
 
+#if CUDA_VERSION <= 10020
 template <typename Scalar, typename SparseFn>
 static inline Status GtsvImpl(SparseFn op, cusparseHandle_t cusparse_handle,
                               int m, int n, const Scalar* dl, const Scalar* d,
@@ -264,6 +265,8 @@ static inline Status GtsvStridedBatchImpl(SparseFn op,
   }
 
 TF_CALL_LAPACK_TYPES(GTSV_STRIDED_BATCH_INSTANCE);
+
+#endif
 
 template <typename Scalar, typename SparseFn>
 static inline Status Gtsv2Impl(SparseFn op, cusparseHandle_t cusparse_handle,

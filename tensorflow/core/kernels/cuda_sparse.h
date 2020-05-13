@@ -196,6 +196,7 @@ class GpuSparse {
   // Wrappers for cuSparse start here.
   //
 
+#if CUDA_VERSION <= 10020
   // Solves tridiagonal system of equations.
   // Note: Cuda Toolkit 9.0+ has better-performing gtsv2 routine. gtsv will be
   // removed in Cuda Toolkit 11.0.
@@ -226,6 +227,7 @@ class GpuSparse {
   Status GtsvStridedBatch(int m, const Scalar *dl, const Scalar *d,
                           const Scalar *du, Scalar *x, int batchCount,
                           int batchStride) const;
+#endif
 
   // Solves tridiagonal system of equations.
   // See: https://docs.nvidia.com/cuda/cusparse/index.html#gtsv2
