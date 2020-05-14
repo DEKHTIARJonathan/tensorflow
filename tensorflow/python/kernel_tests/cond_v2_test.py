@@ -105,6 +105,43 @@ class CondV2Test(test.TestCase):
     self._testCond(true_fn, false_fn, [x, y])
     self._testCond(true_fn, false_fn, [y])
 
+  def testReturnsIndexedSlicesAndNones(self):
+    @def_function.function
+    def build_cond_with_indexed_slices():
+      pred = constant_op.constant(True)
+      def true_fn():
+        return math_ops._as_indexed_slices(constant_op.constant([1.])), None
+      def false_fn():
+        return math_ops._as_indexed_slices(constant_op.constant([2.])), None
+      result = cond_v2.cond_v2(pred, true_fn, false_fn)
+      self.assertIsNone(result[1])
+      return ops.convert_to_tensor(result[0])
+    output = build_cond_with_indexed_slices()
+    self.assertAllEqual(output, [1.])
+
+  def testReturnsNonesAndIndexedSlices(self):
+
+    @def_function.function
+    def build_cond_with_indexed_slices():
+      pred = constant_op.constant(True)
+
+      def true_fn():
+        return (None, None, None,
+                math_ops._as_indexed_slices(constant_op.constant([1.])))
+
+      def false_fn():
+        return (None, None, None,
+                math_ops._as_indexed_slices(constant_op.constant([2.])))
+
+      result = cond_v2.cond_v2(pred, true_fn, false_fn)
+      self.assertIsNone(result[0])
+      self.assertIsNone(result[1])
+      self.assertIsNone(result[2])
+      return ops.convert_to_tensor(result[3])
+
+    output = build_cond_with_indexed_slices()
+    self.assertAllEqual(output, [1.])
+
   def testExternalControlDependencies(self):
     with ops.Graph().as_default(), self.test_session():
       v = variables.Variable(1.0)
@@ -743,21 +780,29 @@ class CondV2Test(test.TestCase):
 
     self.evaluate(variables.global_variables_initializer())
 
+    def update_v1():
+      v1.assign(v1)
+      return v1
+
+    def update_v2():
+      v2.assign(v2)
+      return v2
+
     @def_function.function
     def fn_with_cond():
       cond_v2.cond_v2(
           constant_op.constant(True),
-          lambda: v1,
+          update_v1,
           lambda: constant_op.constant(0.),
           name="cond_1")
       cond_2 = cond_v2.cond_v2(
           constant_op.constant(False),
           lambda: constant_op.constant(0.),
-          lambda: v1,
+          update_v1,
           name="cond_2")
       cond_v2.cond_v2(
           constant_op.constant(True),
-          lambda: v2,
+          update_v2,
           lambda: constant_op.constant(0.),
           name="cond_3")
       cond_4 = cond_v2.cond_v2(
@@ -804,24 +849,34 @@ class CondV2Test(test.TestCase):
 
     @def_function.function
     def fn_with_cond():
+
+      def update_v1():
+        v1.assign(v1)
+        return v1
+
+      def update_v2():
+        v2.assign(v2)
+        return v2
+
       cond_v2.cond_v2(
           constant_op.constant(True),
-          lambda: v1,
+          update_v1,
           lambda: constant_op.constant(0.),
           name="cond_1")
       cond_2 = cond_v2.cond_v2(
           constant_op.constant(False),
           lambda: constant_op.constant(0.),
-          lambda: v1,
+          update_v1,
           name="cond_2")
       cond_v2.cond_v2(
           constant_op.constant(True),
-          lambda: v2,
+          update_v2,
           lambda: constant_op.constant(0.),
           name="cond_3")
 
       @def_function.function
       def cond_4_false_branch():
+        v2.assign(v2)
         return v2
 
       cond_4 = cond_v2.cond_v2(

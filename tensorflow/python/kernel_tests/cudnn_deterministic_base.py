@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -56,8 +57,8 @@ LayerShapeNHWC = collections.namedtuple('LayerShapeNHWC',
 FilterShape2D = collections.namedtuple(
     'FilterShape2D', 'height, width, in_channels, out_channels')
 
-LayerShapeNCDHW = collections.namedtuple('LayerShapeNCDHW',
-                                      'batch, channels, depth, height, width')
+LayerShapeNCDHW = collections.namedtuple(
+    'LayerShapeNCDHW', 'batch, channels, depth, height, width')
 FilterShape3D = collections.namedtuple(
     'FilterShape3D', 'depth, height, width, in_channels, out_channels')
 
@@ -76,8 +77,7 @@ class ConvolutionTest(test.TestCase):
     in_op = self._random_data_op(in_shape)
     filter_op = self._random_data_op(filter_shape)
     # Use the forward op's shape-inference
-    conv_op = nn_ops.conv2d(
-        in_op, filter_op, strides=strides, padding=padding)
+    conv_op = nn_ops.conv2d(in_op, filter_op, strides=strides, padding=padding)
     out_shape = conv_op.get_shape()
     out_op = self._random_data_op(out_shape)
     return out_op
@@ -96,23 +96,28 @@ class ConvolutionTest(test.TestCase):
   def testForward(self):
     np.random.seed(3)
     in_shape = LayerShapeNCDHW(batch=2, channels=3, depth=5, height=7, width=6)
-    filter_shape = FilterShape3D(depth=3, height=3, width=3, in_channels=3,
-                                 out_channels=2)
+    filter_shape = FilterShape3D(
+        depth=3, height=3, width=3, in_channels=3, out_channels=2)
     in_op = self._random_data_op(in_shape)
     filter_op = self._random_data_op(filter_shape)
     strides = [1, 1, 1, 1, 1]
     padding = 'VALID'
     dilations = [1, 1, 2, 2, 2]
-    out_op = nn_ops.conv3d(in_op, filter_op, strides=strides, padding=padding,
-                           data_format='NCDHW', dilations=dilations)
+    out_op = nn_ops.conv3d(
+        in_op,
+        filter_op,
+        strides=strides,
+        padding=padding,
+        data_format='NCDHW',
+        dilations=dilations)
     self._assert_reproducible(out_op)
 
   @test_util.run_cuda_only
   def testBackwardFilterGradient(self):
     np.random.seed(1)
     in_shape = LayerShapeNHWC(batch=8, height=128, width=128, channels=8)
-    filter_shape = FilterShape2D(height=3, width=3, in_channels=8,
-                                 out_channels=8)
+    filter_shape = FilterShape2D(
+        height=3, width=3, in_channels=8, out_channels=8)
     in_op = self._random_data_op(in_shape)
     strides = [1, 1, 1, 1]
     padding = 'SAME'
@@ -125,8 +130,8 @@ class ConvolutionTest(test.TestCase):
   def testBackwardInputGradient(self):
     np.random.seed(2)
     in_shape = LayerShapeNHWC(batch=8, height=32, width=32, channels=8)
-    filter_shape = FilterShape2D(height=7, width=7, in_channels=8,
-                                 out_channels=128)
+    filter_shape = FilterShape2D(
+        height=7, width=7, in_channels=8, out_channels=128)
     filter_op = self._random_data_op(filter_shape)
     strides = [1, 1, 1, 1]
     padding = 'SAME'

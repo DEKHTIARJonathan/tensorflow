@@ -121,13 +121,6 @@ cusparseSetMatType(cusparseMatDescr_t   descrA,
   return func_ptr(descrA, type);
 }
 
-cusparseMatrixType_t CUSPARSEAPI
-cusparseGetMatType(const cusparseMatDescr_t descrA) {
-  using FuncPtr = cusparseMatrixType_t (CUSPARSEAPI *)(const cusparseMatDescr_t);
-  static auto func_ptr = LoadSymbol<FuncPtr>("cusparseGetMatType");
-  return func_ptr(descrA);
-}
-
 cusparseStatus_t CUSPARSEAPI
 cusparseSetMatFillMode(cusparseMatDescr_t descrA,
                        cusparseFillMode_t fillMode) {
@@ -135,13 +128,6 @@ cusparseSetMatFillMode(cusparseMatDescr_t descrA,
   static auto func_ptr = LoadSymbol<FuncPtr>("cusparseSetMatFillMode");
   if (!func_ptr) return GetSymbolNotFoundError();
   return func_ptr(descrA, fillMode);
-}
-
-cusparseFillMode_t CUSPARSEAPI
-cusparseGetMatFillMode(const cusparseMatDescr_t descrA) {
-  using FuncPtr = cusparseFillMode_t (CUSPARSEAPI *)(const cusparseMatDescr_t);
-  static auto func_ptr = LoadSymbol<FuncPtr>("cusparseGetMatFillMode");
-  return func_ptr(descrA);
 }
 
 cusparseStatus_t CUSPARSEAPI
@@ -153,13 +139,6 @@ cusparseSetMatDiagType(cusparseMatDescr_t descrA,
   return func_ptr(descrA, diagType);
 }
 
-cusparseDiagType_t CUSPARSEAPI
-cusparseGetMatDiagType(const cusparseMatDescr_t descrA) {
-  using FuncPtr = cusparseDiagType_t (CUSPARSEAPI *)(const cusparseMatDescr_t);
-  static auto func_ptr = LoadSymbol<FuncPtr>("cusparseGetMatDiagType");
-  return func_ptr(descrA);
-}
-
 cusparseStatus_t CUSPARSEAPI
 cusparseSetMatIndexBase(cusparseMatDescr_t  descrA,
                         cusparseIndexBase_t base) {
@@ -167,13 +146,6 @@ cusparseSetMatIndexBase(cusparseMatDescr_t  descrA,
   static auto func_ptr = LoadSymbol<FuncPtr>("cusparseSetMatIndexBase");
   if (!func_ptr) return GetSymbolNotFoundError();
   return func_ptr(descrA, base);
-}
-
-cusparseIndexBase_t CUSPARSEAPI
-cusparseGetMatIndexBase(const cusparseMatDescr_t descrA) {
-  using FuncPtr = cusparseIndexBase_t (CUSPARSEAPI *)(const cusparseMatDescr_t);
-  static auto func_ptr = LoadSymbol<FuncPtr>("cusparseGetMatIndexBase");
-  return func_ptr(descrA);
 }
 
 cusparseStatus_t CUSPARSEAPI

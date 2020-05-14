@@ -15,7 +15,7 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define EIGEN_USE_GPU
 #endif
 
@@ -35,7 +35,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/sparse/sparse_matrix.h"
 #include "tensorflow/core/util/work_sharder.h"
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/kernels/cuda_solvers.h"
 #include "tensorflow/core/kernels/cuda_sparse.h"
 #endif
@@ -369,8 +369,6 @@ class CSRSparseMatMulGPUOp : public OpKernel {
 
     CSRSparseMatrix c;
     Tensor c_row_ptrs;
-    Tensor c_col_inds;
-    Tensor c_values;
 
     // TODO(ebrevdo): Re-enable transposing within the GEMM kernel when cuSparse
     // stops spitting out CUSPARSE_STATUS_INTERNAL_ERROR values for transposes.
@@ -419,6 +417,7 @@ class CSRSparseMatMulGPUOp : public OpKernel {
     }
     auto b_input_dense_shape = b_input_matrix->dense_shape().vec<int64>();
 
+#if CUDA_VERSION >= 10000
     size_t maxWorkspaceSize = 0;
     for (int i = 0; i < batch_size; ++i) {
       // Calculate maximum workspace size over batch.
@@ -431,15 +430,22 @@ class CSRSparseMatMulGPUOp : public OpKernel {
                                   b_input_matrix->values_vec<T>(i),
                                   b_input_dense_shape};
       size_t thisWorkspaceSize;
-      csr_gemm.GetWorkspaceSize(a_comp, b_comp, &thisWorkspaceSize);
+      OP_REQUIRES_OK(
+          ctx, csr_gemm.GetWorkspaceSize(a_comp, b_comp, &thisWorkspaceSize));
       if (thisWorkspaceSize > maxWorkspaceSize) {
         maxWorkspaceSize = thisWorkspaceSize;
       }
     }
 
-    Tensor workspace;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT8, {maxWorkspaceSize},
-                                           &workspace));
+    Tensor temp;
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(
+                 DT_INT8, TensorShape({static_cast<int64>(maxWorkspaceSize)}),
+                 &temp));
+    void* workspace = temp.flat<int8>().data();
+#else
+    void* workspace = nullptr;
+#endif
 
     for (int i = 0; i < batch_size; ++i) {
       // Calculate output sizes for all minibatch entries.
@@ -457,9 +463,9 @@ class CSRSparseMatMulGPUOp : public OpKernel {
                                               rows + 1);
 
       int c_nnz_i;
-      OP_REQUIRES_OK(ctx, csr_gemm.GetOutputStructure(a_comp, b_comp,
-                                                      c_row_ptr_i, &c_nnz_i,
-                                                      workspace));
+      OP_REQUIRES_OK(ctx,
+                     csr_gemm.GetOutputStructure(a_comp, b_comp, c_row_ptr_i,
+                                                 &c_nnz_i, workspace));
       c_batch_ptr(i + 1) = c_batch_ptr(i) + c_nnz_i;
     }
 
@@ -523,22 +529,24 @@ REGISTER_CPU(complex128)
                               .TypeConstraint<T>("type"),  \
                           CSRSparseMatMulGPUOp<DEV##Device, T>);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define REGISTER_GPU(T) REGISTER(GPU, T)
 
 REGISTER_GPU(float)
 REGISTER_GPU(double)
+#if GOOGLE_CUDA
 REGISTER_GPU(complex64)
 REGISTER_GPU(complex128)
+#endif  // GOOGLE_CUDA
 
 #undef REGISTER_GPU
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #undef REGISTER
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 namespace functor {
 template <typename T>
 struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
@@ -550,21 +558,36 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
         initialized_(false),
         transpose_a_(transpose_a),
         adjoint_a_(adjoint_a),
+#if CUDA_VERSION < 10000
+        transpose_b_(transpose_b) {
+#else
         transpose_b_(transpose_b),
         info_(nullptr) {
+#endif  // CUDA_VERSION < 10000
     // TODO(ebrevdo): Figure out why transposed implementations crash cuSparse.
+#if GOOGLE_CUDA
     transA_ = transpose_a ? (adjoint_a ? CUSPARSE_OPERATION_TRANSPOSE
                                        : CUSPARSE_OPERATION_CONJUGATE_TRANSPOSE)
                           : CUSPARSE_OPERATION_NON_TRANSPOSE;
     transB_ = transpose_b ? CUSPARSE_OPERATION_TRANSPOSE
                           : CUSPARSE_OPERATION_NON_TRANSPOSE;
+#elif TENSORFLOW_USE_ROCM
+    transA_ = transpose_a
+                  ? (adjoint_a ? HIPSPARSE_OPERATION_TRANSPOSE
+                               : HIPSPARSE_OPERATION_CONJUGATE_TRANSPOSE)
+                  : HIPSPARSE_OPERATION_NON_TRANSPOSE;
+    transB_ = transpose_b ? HIPSPARSE_OPERATION_TRANSPOSE
+                          : HIPSPARSE_OPERATION_NON_TRANSPOSE;
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   }
 
+#if CUDA_VERSION >= 10000
   ~CSRSparseSparseMatrixMatMul() {
     if (initialized_) {
       cusparseDestroyCsrgemm2Info(info_);
     }
   }
+#endif
 
   Status Initialize() {
     if (adjoint_a_ && transpose_a_) {
@@ -572,25 +595,19 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
           "Only one of adjoint_a and transpose_a may be true.");
     }
 
-    if (transA_ != CUSPARSE_OPERATION_NON_TRANSPOSE ||
-        transB_ != CUSPARSE_OPERATION_NON_TRANSPOSE) {
-      return errors::InvalidArgument(
-          "Transpose csrgemm currently not supported.");
-    }
-
     TF_RETURN_IF_ERROR(cuda_sparse_.Initialize());
     TF_RETURN_IF_ERROR(descrA_.Initialize());
     TF_RETURN_IF_ERROR(descrB_.Initialize());
     TF_RETURN_IF_ERROR(descrC_.Initialize());
-    // TODO(nluehr) Wrap this in an object so it gets destroyed without destructor
-    TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateCsrgemm2Info(&info_));
+#if CUDA_VERSION >= 10000
+    TF_RETURN_IF_GPUSPARSE_ERROR(cusparseCreateCsrgemm2Info(&info_));
+#endif
     initialized_ = true;
     return Status::OK();
   }
 
   Status GetWorkspaceSize(const ConstCSRComponent<T>& a,
-                          const ConstCSRComponent<T>& b,
-                          size_t* bufferSize) {
+                          const ConstCSRComponent<T>& b, size_t* bufferSize) {
     DCHECK(initialized_);
     const int m =
         a.dense_shape_host(a.dense_shape_host.size() - (transpose_a_ ? 1 : 2));
@@ -607,11 +624,11 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
 
     const int n =
         b.dense_shape_host(b.dense_shape_host.size() - (transpose_b_ ? 2 : 1));
-    
+
     TF_RETURN_IF_ERROR(cuda_sparse_.CsrgemmBufferSize<T>(
-        m, n, k, descrA_.descr(), nnzA, a.row_ptr.data(),
-        a.col_ind.data(), descrB_.descr(), nnzB, b.row_ptr.data(),
-        b.col_ind.data(), info_, bufferSize));
+        m, n, k, descrA_.descr(), nnzA, a.row_ptr.data(), a.col_ind.data(),
+        descrB_.descr(), nnzB, b.row_ptr.data(), b.col_ind.data(), info_,
+        bufferSize));
 
     return Status::OK();
   }
@@ -619,7 +636,7 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
   Status GetOutputStructure(const ConstCSRComponent<T>& a,
                             const ConstCSRComponent<T>& b,
                             TTypes<int32>::UnalignedVec c_row_ptr,
-                            int* output_nnz, Tensor& workspace) {
+                            int* output_nnz, void* workspace) {
     DCHECK(initialized_);
 
     const int m =
@@ -641,11 +658,17 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
 
     *output_nnz = -1;
 
+#if CUDA_VERSION < 10000
     TF_RETURN_IF_ERROR(cuda_sparse_.CsrgemmNnz(
-        m, n, k, descrA_.descr(), nnzA, a.row_ptr.data(),
+        transA_, transB_, m, n, k, descrA_.descr(), nnzA, a.row_ptr.data(),
         a.col_ind.data(), descrB_.descr(), nnzB, b.row_ptr.data(),
-        b.col_ind.data(), descrC_.descr(), c_row_ptr.data(), output_nnz,
-        info_, workspace.flat<int8>().data()));
+        b.col_ind.data(), descrC_.descr(), c_row_ptr.data(), output_nnz));
+#else
+    TF_RETURN_IF_ERROR(cuda_sparse_.CsrgemmNnz(
+        m, n, k, descrA_.descr(), nnzA, a.row_ptr.data(), a.col_ind.data(),
+        descrB_.descr(), nnzB, b.row_ptr.data(), b.col_ind.data(),
+        descrC_.descr(), c_row_ptr.data(), output_nnz, info_, workspace));
+#endif
 
     if (*output_nnz < 0) {
       return errors::Internal(
@@ -656,7 +679,7 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
   }
 
   Status Compute(const ConstCSRComponent<T>& a, const ConstCSRComponent<T>& b,
-                 CSRComponent<T>* c, Tensor& workspace) {
+                 CSRComponent<T>* c, void* workspace) {
     DCHECK(initialized_);
 
     const int m =
@@ -678,12 +701,19 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
         b.dense_shape_host(b.dense_shape_host.size() - (transpose_b_ ? 2 : 1));
     DCHECK_EQ(n, c->dense_shape_host(c->dense_shape_host.size() - 1));
 
+#if CUDA_VERSION < 10000
     TF_RETURN_IF_ERROR(cuda_sparse_.Csrgemm(
-        m, n, k, descrA_.descr(), nnzA, a.values.data(),
+        transA_, transB_, m, k, n, descrA_.descr(), nnzA, a.values.data(),
         a.row_ptr.data(), a.col_ind.data(), descrB_.descr(), nnzB,
-        b.values.data(), b.row_ptr.data(), b.col_ind.data(),
-        descrC_.descr(), c->values.data(), c->row_ptr.data(), c->col_ind.data(),
-        info_, workspace.flat<int8>().data()));
+        b.values.data(), b.row_ptr.data(), b.col_ind.data(), descrC_.descr(),
+        c->values.data(), c->row_ptr.data(), c->col_ind.data()));
+#else
+    TF_RETURN_IF_ERROR(cuda_sparse_.Csrgemm(
+        m, n, k, descrA_.descr(), nnzA, a.values.data(), a.row_ptr.data(),
+        a.col_ind.data(), descrB_.descr(), nnzB, b.values.data(),
+        b.row_ptr.data(), b.col_ind.data(), descrC_.descr(), c->values.data(),
+        c->row_ptr.data(), c->col_ind.data(), info_, workspace));
+#endif
 
     // TODO(ebrevdo): Add a flag to CSRSparseMatrix whether matrix
     // columns are sorted?  Above operation leads to unsorted columns.
@@ -700,21 +730,23 @@ struct CSRSparseSparseMatrixMatMul<GPUDevice, T>
 
  private:
   OpKernelContext* ctx_;
-  CudaSparse cuda_sparse_;
+  GpuSparse cuda_sparse_;
   bool initialized_;
   bool transpose_a_;
   bool adjoint_a_;
   bool transpose_b_;
-  CudaSparseMatrixDescriptor descrA_;
-  CudaSparseMatrixDescriptor descrB_;
-  CudaSparseMatrixDescriptor descrC_;
-  cusparseOperation_t transA_;
-  cusparseOperation_t transB_;
+  GpuSparseMatrixDescriptor descrA_;
+  GpuSparseMatrixDescriptor descrB_;
+  GpuSparseMatrixDescriptor descrC_;
+  gpusparseOperation_t transA_;
+  gpusparseOperation_t transB_;
+#if CUDA_VERSION >= 10000
   csrgemm2Info_t info_;
+#endif
 };
 
 }  // namespace functor
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace tensorflow

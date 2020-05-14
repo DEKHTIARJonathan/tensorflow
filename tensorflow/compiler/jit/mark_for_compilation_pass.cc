@@ -21,6 +21,7 @@ limitations under the License.
 #include <unordered_map>
 #include <unordered_set>
 
+#include "absl/base/call_once.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_join.h"
@@ -962,6 +963,22 @@ absl::optional<string> MarkForCompilationPassImpl::GetXlaScope(Node* node) {
   return absl::nullopt;
 }
 
+// Returns true iff the attribute `attr_name` is attached to either the node or
+// to it's callee.
+static bool GetNodeOrFuncAttr(Node* node, FunctionLibraryDefinition* flib_def,
+                              const char* attr_name) {
+  bool out = false;
+  bool attr_value;
+  if (TryGetNodeAttr(node->attrs(), attr_name, &attr_value)) {
+    out |= attr_value;
+  }
+
+  if (flib_def->GetAttr(*node, attr_name, &attr_value).ok()) {
+    out |= attr_value;
+  }
+  return out;
+}
+
 Status MarkForCompilationPassImpl::BuildInitialClusterSet() {
   auto ignore_resource_ops = [&](const Node& n, bool* ignore) {
     return IgnoreResourceOpForSafetyAnalysis(&device_info_cache_, n, ignore);
@@ -1015,16 +1032,9 @@ Status MarkForCompilationPassImpl::BuildInitialClusterSet() {
       resource_var_operation_node_id = node->id();
     }
 
-    bool is_xla_compile_attr_true = false;
-
-    bool xla_compile_attr;
-    if (TryGetNodeAttr(node->attrs(), kXlaCompileAttr, &xla_compile_attr)) {
-      is_xla_compile_attr_true |= xla_compile_attr;
-    }
-
-    if (flib_def_->GetAttr(*node, kXlaCompileAttr, &xla_compile_attr).ok()) {
-      is_xla_compile_attr_true |= xla_compile_attr;
-    }
+    bool is_xla_compile_attr_true =
+        GetNodeOrFuncAttr(node, flib_def_, kXlaCompileAttr) ||
+        GetNodeOrFuncAttr(node, flib_def_, kXlaMustCompileAttr);
 
     DeviceSet devices;
     devices.Insert(device);
@@ -1078,11 +1088,11 @@ StatusOr<bool> IsIdentityDrivingConstsInLoop(Node* node) {
 
 absl::flat_hash_set<string> GetOrCreateWhitelist() {
   absl::flat_hash_map<string, std::vector<string>>* whitelist_table =
-    tensorflow::GetWhitelistTable();
+      tensorflow::GetWhitelistTable();
   MarkForCompilationPassFlags* flags = GetMarkForCompilationPassFlags();
   absl::flat_hash_set<string> whitelist;
 
-  for (auto s : absl::StrSplit(flags->tf_xla_ops_to_cluster, ",")) {
+  for (auto s : absl::StrSplit(flags->tf_xla_ops_to_cluster, ',')) {
     if (s == "FUSIBLE") {
       for (auto pair : *whitelist_table) {
         whitelist.insert(pair.second.begin(), pair.second.end());
@@ -1117,7 +1127,7 @@ Status MarkForCompilationPassImpl::FindCompilationCandidates() {
       *graph_, /*compile_time_const_arg_indices=*/nullptr,
       &compile_time_const_nodes, lib_runtime));
   // Iterate over nodes in sorted order so that compiler fuel is deterministic.
-  // We can't simply pass op_nodes().begin() and op_nodes().end to the
+  // We can't simply pass op_nodes().begin() and op_nodes().end() to the
   // std::vector constructor because they're not proper iterators, with
   // iterator_traits defined and so on.
   std::vector<Node*> sorted_nodes;
@@ -1186,7 +1196,7 @@ Status MarkForCompilationPassImpl::FindCompilationCandidates() {
       continue;
     }
 
-    if (whitelist.size() > 0 && !whitelist.contains(node->def().op())) {
+    if (!whitelist.empty() && !whitelist.contains(node->def().op())) {
       VLOG(1) << "Rejecting TF operation " << node->def().op()
               << " as it is not listed in --tf_xla_ops_to_cluster.";
       continue;
@@ -1413,7 +1423,7 @@ Status MarkForCompilationPassImpl::Run() {
 void MarkForCompilationPassImpl::DumpPostClusteringGraphs() {
   DumpGraphToFile("mark_for_compilation", *graph_, flib_def_);
 
-  // We also dump out an annoated version of the TF graph where the nodes
+  // We also dump out an annotated version of the TF graph where the nodes
   // names are prefixed with the cluster names.  This can help visualizing the
   // clustering decisions on TensorBoard.
   Graph new_graph(graph_->op_registry());
@@ -1616,8 +1626,8 @@ StatusOr<bool> MarkForCompilationPassImpl::ShouldCompileClusterImpl(
 
   if (!should_compile && global_jit_level_ != OptimizerOptions::OFF &&
       device_type.type_string() == DEVICE_CPU) {
-    static std::once_flag once;
-    std::call_once(once, [] {
+    static absl::once_flag once;
+    absl::call_once(once, [] {
       LOG(WARNING)
           << "(One-time warning): Not using XLA:CPU for cluster because envvar "
              "TF_XLA_FLAGS=--tf_xla_cpu_global_jit was not set.  If you want "
@@ -1770,14 +1780,15 @@ absl::flat_hash_map<string, std::vector<string>>* GetWhitelistTable() {
            {"ComplexAbs", "Angle", "Conj", "Abs", "Acos", "Acosh", "Asin",
             "Atan", "Atanh", "Ceil", "Cos", "Cosh", "Sin", "Exp", "Expm1",
             "Floor", "IsFinite", "IsInf", "IsNan", "Inv", "Reciprocal", "Log",
-            "Log1p", "Invert", "LogicalNot", "Neg", "Rint", "Round", "Rsqrt",
-            "Sigmoid", "Sign", "Sinh", "Softplus", "Softsign", "Sqrt", "Square",
-            "Tan", "Tanh", "Real", "Imag", "Erf", "Erfc", "Lgamma", "Digamma",
+            "Log1p", "Invert", "LogicalNot", "Ndtri", "Neg", "Rint", "Round",
+            "Rsqrt", "Sigmoid", "Sign", "Sinh", "Softplus", "Softsign", "Sqrt",
+            "Square", "Tan", "Tanh", "Real", "Imag", "Erf", "Erfc", "Erfinv",
+            "Lgamma", "Digamma",
             // Binary
             "Add", "AddV2", "Sub", "Mul", "Div", "Atan2", "Complex", "DivNoNan",
-            "MulNoNan", "FloorDiv", "Xlogy", "Xdivy", "FloorMod", "BitwiseAnd",
-            "BitwiseOr", "BitwiseXor", "LeftShift", "RightShift", "LogicalAnd",
-            "LogicalOr", "Mod", "Maximum", "Minimum", "RealDiv",
+            "MulNoNan", "FloorDiv", "Xlogy", "Xlog1py", "Xdivy", "FloorMod",
+            "BitwiseAnd", "BitwiseOr", "BitwiseXor", "LeftShift", "RightShift",
+            "LogicalAnd", "LogicalOr", "Mod", "Maximum", "Minimum", "RealDiv",
             "ReciprocalGrad", "RsqrtGrad", "SqrtGrad", "TruncateDiv",
             "TruncateMod", "Equal", "NotEqual", "Greater", "GreaterEqual",
             "Less", "LessEqual", "SigmoidGrad", "SoftplusGrad", "SoftsignGrad",
@@ -1871,6 +1882,10 @@ absl::flat_hash_set<string> GetKnownXLAWhitelistOp() {
                                      "Einsum",
                                      "EmptyTensorList",
                                      "ExtractImagePatches",
+                                     "Igamma",
+                                     "IgammaGradA",
+                                     "RandomGammaGrad",
+                                     "Igammac",
                                      "FFT",
                                      "FFT2D",
                                      "FFT3D",
@@ -1992,6 +2007,7 @@ absl::flat_hash_set<string> GetKnownXLAWhitelistOp() {
                                      "StatelessRandomNormal",
                                      "StatelessRandomUniform",
                                      "StatelessRandomUniformInt",
+                                     "StatelessRandomUniformFullInt",
                                      "StatelessTruncatedNormal",
                                      "StatelessWhile",
                                      "Svd",
@@ -2035,6 +2051,7 @@ absl::flat_hash_set<string> GetKnownXLAWhitelistOp() {
                                      "XlaDynamicSlice",
                                      "XlaDynamicUpdateSlice",
                                      "XlaEinsum",
+                                     "XlaGather",
                                      "XlaIf",
                                      "XlaKeyValueSort",
                                      "XlaPad",
@@ -2042,6 +2059,7 @@ absl::flat_hash_set<string> GetKnownXLAWhitelistOp() {
                                      "XlaReduce",
                                      "XlaReduceWindow",
                                      "XlaReplicaId",
+                                     "XlaScatter",
                                      "XlaSelectAndScatter",
                                      "XlaSelfAdjointEig",
                                      "XlaSend",

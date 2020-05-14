@@ -38,7 +38,7 @@ tf_module {
   }
   member {
     name: "DType"
-    mtype: "<type \'type\'>"
+    mtype: "<class \'pybind11_builtins.pybind11_type\'>"
   }
   member {
     name: "DeviceSpec"
@@ -1069,10 +1069,6 @@ tf_module {
     argspec: "args=[\'a\', \'b\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
-    name: "ctc_loss_v2"
-    argspec: "args=[\'inputs\', \'labels_indices\', \'labels_values\', \'sequence_length\', \'preprocess_collapse_repeated\', \'ctc_merge_repeated\', \'ignore_longer_outputs_than_inputs\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'False\', \'None\'], "
-  }
-  member_method {
     name: "cumprod"
     argspec: "args=[\'x\', \'axis\', \'exclusive\', \'reverse\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'False\', \'False\', \'None\'], "
   }
@@ -1114,7 +1110,7 @@ tf_module {
   }
   member_method {
     name: "dequantize"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'name\', \'axis\', \'narrow_range\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\', \'None\', \'False\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'name\', \'axis\', \'narrow_range\', \'dtype\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\', \'None\', \'False\', \"<dtype: \'float32\'>\"], "
   }
   member_method {
     name: "deserialize_many_sparse"
@@ -1242,6 +1238,10 @@ tf_module {
   }
   member_method {
     name: "executing_eagerly"
+    argspec: "args=[], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "executing_eagerly_outside_functions"
     argspec: "args=[], varargs=None, keywords=None, defaults=None"
   }
   member_method {
@@ -1646,11 +1646,11 @@ tf_module {
   }
   member_method {
     name: "matrix_diag"
-    argspec: "args=[\'diagonal\', \'name\', \'k\', \'num_rows\', \'num_cols\', \'padding_value\'], varargs=None, keywords=None, defaults=[\'diag\', \'0\', \'-1\', \'-1\', \'0\'], "
+    argspec: "args=[\'diagonal\', \'name\', \'k\', \'num_rows\', \'num_cols\', \'padding_value\', \'align\'], varargs=None, keywords=None, defaults=[\'diag\', \'0\', \'-1\', \'-1\', \'0\', \'RIGHT_LEFT\'], "
   }
   member_method {
     name: "matrix_diag_part"
-    argspec: "args=[\'input\', \'name\', \'k\', \'padding_value\'], varargs=None, keywords=None, defaults=[\'diag_part\', \'0\', \'0\'], "
+    argspec: "args=[\'input\', \'name\', \'k\', \'padding_value\', \'align\'], varargs=None, keywords=None, defaults=[\'diag_part\', \'0\', \'0\', \'RIGHT_LEFT\'], "
   }
   member_method {
     name: "matrix_inverse"
@@ -1658,7 +1658,7 @@ tf_module {
   }
   member_method {
     name: "matrix_set_diag"
-    argspec: "args=[\'input\', \'diagonal\', \'name\', \'k\'], varargs=None, keywords=None, defaults=[\'set_diag\', \'0\'], "
+    argspec: "args=[\'input\', \'diagonal\', \'name\', \'k\', \'align\'], varargs=None, keywords=None, defaults=[\'set_diag\', \'0\', \'RIGHT_LEFT\'], "
   }
   member_method {
     name: "matrix_solve"

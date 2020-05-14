@@ -174,12 +174,11 @@ struct CSRStructureModifyingFunctor {
   virtual Status GetOutputStructure(const ConstCSRComponent<T>& a,
                                     const ConstCSRComponent<T>& b,
                                     TTypes<int32>::UnalignedVec c_row_ptr,
-                                    int* output_nnz,
-                                    Tensor& workspace) = 0;
+                                    int* output_nnz, void* workspace) = 0;
 
   virtual Status Compute(const ConstCSRComponent<T>& a,
                          const ConstCSRComponent<T>& b, CSRComponent<T>* c,
-                         Tensor& workspace) = 0;
+                         void* workspace) = 0;
 };
 
 // Calculates C = alpha * A + beta * B, where A and B are in CSR

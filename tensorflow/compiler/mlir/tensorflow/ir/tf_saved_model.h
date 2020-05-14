@@ -16,9 +16,10 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_MLIR_TENSORFLOW_IR_TF_SAVED_MODEL_H_
 #define TENSORFLOW_COMPILER_MLIR_TENSORFLOW_IR_TF_SAVED_MODEL_H_
 
-#include "mlir/IR/Dialect.h"  // TF:local_config_mlir
-#include "mlir/IR/Module.h"  // TF:local_config_mlir
-#include "mlir/IR/OpDefinition.h"  // TF:local_config_mlir
+#include "mlir/IR/Dialect.h"  // TF:llvm-project
+#include "mlir/IR/Function.h"  // TF:llvm-project
+#include "mlir/IR/Module.h"  // TF:llvm-project
+#include "mlir/IR/OpDefinition.h"  // TF:llvm-project
 
 namespace mlir {
 namespace tf_saved_model {
@@ -50,6 +51,15 @@ bool IsExported(Operation *op);
 
 // Returns true if `module` has tf_saved_model linkage semantics.
 bool HasTfSavedModelSemantics(ModuleOp module);
+
+// Returns the tf_saved_model.global_tensor op that func's arg_index'th argument
+// refers to as a bound input, or null.
+GlobalTensorOp LookupBoundInput(FuncOp func, int arg_index,
+                                const SymbolTable &symbol_table);
+
+// Gets the type that an exported function arg that is bound to `global_tensor`
+// should have.
+Type GetBoundInputArgTypeFor(GlobalTensorOp global_tensor);
 
 }  // namespace tf_saved_model
 }  // namespace mlir

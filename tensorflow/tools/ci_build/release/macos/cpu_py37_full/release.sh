@@ -17,12 +17,7 @@ set -e
 set -x
 
 source tensorflow/tools/ci_build/release/common.sh
-
-# Install latest bazel
-update_bazel_macos
-which bazel
-
-set_bazel_outdir
+install_bazelisk
 
 install_macos_pip_deps sudo pip3.7
 
@@ -36,7 +31,7 @@ export PYTHON_BIN_PATH=$(which python3.7)
 yes "" | "$PYTHON_BIN_PATH" configure.py
 
 # Build the pip package
-bazel build --config=opt tensorflow/tools/pip_package:build_pip_package
+bazel build --config=opt --define=no_tensorflow_py_deps tensorflow/tools/pip_package:build_pip_package
 mkdir pip_pkg
 ./bazel-bin/tensorflow/tools/pip_package/build_pip_package pip_pkg
 

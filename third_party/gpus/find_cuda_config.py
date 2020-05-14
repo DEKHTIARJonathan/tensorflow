@@ -222,25 +222,20 @@ def _find_library(base_paths, library_name, required_version):
   return _find_file(base_paths, _library_paths(), filepattern)
 
 
-def _find_versioned_file(base_paths, relative_paths, filepattern,
+def _find_versioned_file(base_paths, relative_paths, filepatterns,
                          required_version, get_version):
   """Returns first valid path to a file that matches the requested version."""
-  if type(filepattern) not in [list, tuple]:
-    filepattern = [filepattern]
+  if type(filepatterns) not in [list, tuple]:
+    filepatterns = [filepatterns]
   for path in _cartesian_product(base_paths, relative_paths):
-    for pattern in filepattern:
-      for file in glob.glob(os.path.join(path, pattern)):
+    for filepattern in filepatterns:
+      for file in glob.glob(os.path.join(path, filepattern)):
         actual_version = get_version(file)
         if _matches_version(actual_version, required_version):
           return file, actual_version
-  if type(filepattern) not in [list, tuple]:
-    raise _not_found_error(
-        base_paths, relative_paths,
-        filepattern + " matching version '%s'" % required_version)
-  else:
-    raise _not_found_error(
-        base_paths, relative_paths,
-        filepattern[0] + " matching version '%s'" % required_version)
+  raise _not_found_error(
+      base_paths, relative_paths,
+      ", ".join(filepatterns) + " matching version '%s'" % required_version)
 
 
 def _find_header(base_paths, header_name, required_version, get_version):

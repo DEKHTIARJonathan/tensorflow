@@ -21,7 +21,6 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_JIT_MARK_FOR_COMPILATION_PASS_H_
 
 #include "absl/container/flat_hash_set.h"
-
 #include "tensorflow/compiler/jit/compilability_check_util.h"
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 
@@ -35,8 +34,9 @@ extern const char* const kXlaClusterAttr;
 // compilation by the encapsulate subgraphs pass.
 extern const char* const kXlaOutsideCompilationAttr;
 
-// Pass that marks a subset of operators in the graph with attribute
-// _XlaCluster so they are compiled by the EncapsulateSubgraphsPass.
+// Marks a subset of nodes in the graph which are to be clustered
+// with an attribute _XlaCluster=<cluster id> so they are picked up by the
+// EncapsulateSubgraphsPass.
 class MarkForCompilationPass : public GraphOptimizationPass {
  public:
   MarkForCompilationPass() = default;
@@ -58,7 +58,7 @@ bool IsCompilable(FunctionLibraryRuntime* flr, const NodeDef& ndef,
                   RecursiveCompilabilityChecker::UncompilableNodesMap*
                       uncompilable_node_info = nullptr);
 
-absl::flat_hash_map<string, std::vector<string>> *GetWhitelistTable();
+absl::flat_hash_map<string, std::vector<string>>* GetWhitelistTable();
 
 namespace testing {
 // DO NOT USE IN PRODUCTION.

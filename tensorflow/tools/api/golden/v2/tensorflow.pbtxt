@@ -10,7 +10,7 @@ tf_module {
   }
   member {
     name: "DType"
-    mtype: "<type \'type\'>"
+    mtype: "<class \'pybind11_builtins.pybind11_type\'>"
   }
   member {
     name: "DeviceSpec"
@@ -290,6 +290,10 @@ tf_module {
   }
   member {
     name: "optimizers"
+    mtype: "<type \'module\'>"
+  }
+  member {
+    name: "profiler"
     mtype: "<type \'module\'>"
   }
   member {
@@ -575,10 +579,6 @@ tf_module {
   member_method {
     name: "cosh"
     argspec: "args=[\'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
-  }
-  member_method {
-    name: "ctc_loss_v2"
-    argspec: "args=[\'inputs\', \'labels_indices\', \'labels_values\', \'sequence_length\', \'preprocess_collapse_repeated\', \'ctc_merge_repeated\', \'ignore_longer_outputs_than_inputs\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'False\', \'None\'], "
   }
   member_method {
     name: "cumsum"

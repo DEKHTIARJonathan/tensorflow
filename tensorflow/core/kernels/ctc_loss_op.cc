@@ -15,9 +15,9 @@ limitations under the License.
 
 // See docs in ../ops/ctc_ops.cc.
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define EIGEN_USE_GPU
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op.h"
@@ -30,85 +30,42 @@ limitations under the License.
 #include "tensorflow/core/util/sparse/sparse_tensor.h"
 
 #if GOOGLE_CUDA
-#include "tensorflow/core/platform/stream_executor.h"
+#include "third_party/gpus/cudnn/cudnn.h"
+#endif  // GOOGLE_CUDA
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#include "tensorflow/core/kernels/conv_ops_gpu.h"
 #include "tensorflow/core/util/stream_executor_util.h"
-#endif // GOOGLE_CUDA
+#include "tensorflow/core/util/tensor_format.h"
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 namespace tensorflow {
 
-#if GOOGLE_CUDA
+typedef Eigen::ThreadPoolDevice CPUDevice;
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 using GPUDevice = Eigen::GpuDevice;
 
 namespace {
-using se::DeviceMemory;
 using se::Stream;
 using se::StreamExecutor;
-using se::ScratchAllocator;
-using se::dnn::CtcLossDescriptor;
 using se::dnn::RnnStateTensorDescriptor;
 using se::dnn::ToDataType;
-using se::port::StatusOr;
 
-template<typename T>
+template <typename T>
 void DoHistogram(OpKernelContext* ctx, const Tensor* labels_indices,
                  int num_indices, int batch_size,
-                 std::vector<int> *labels_lengths) {
+                 std::vector<int>* labels_lengths) {
   const T* h_in = labels_indices->flat<T>().data();
-  for(int i = 0; i < num_indices; i++) {
-    T key = h_in[i * 2];
+  for (int i = 0; i < num_indices; i++) {
+    const T& key = h_in[i * 2];
     (*labels_lengths)[key]++;
   }
 }
 
-// A helper to allocate temporary scratch memory for cudnnCTCLoss ops. It
-// takes the ownership of the underlying memory. The expectation is that the
-// memory should be alive for the span of the cudnnCTCLoss itself.
+}  // end namespace
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
 template <typename T>
-class CudnnCtcLossAllocatorInTemp : public ScratchAllocator {
- public:
-  ~CudnnCtcLossAllocatorInTemp() override = default;
-
-  explicit CudnnCtcLossAllocatorInTemp(OpKernelContext* context)
-      : context_(context) {}
-
-  int64 GetMemoryLimitInBytes() override {
-    return std::numeric_limits<int64>::max();
-  }
-
-  StatusOr<DeviceMemory<uint8>> AllocateBytes(int64 byte_size) override {
-    Tensor temporary_memory;
-    const DataType tf_data_type = DataTypeToEnum<T>::v();
-    int64 allocate_count =
-        Eigen::divup(byte_size, static_cast<int64>(sizeof(T)));
-    Status allocation_status(context_->allocate_temp(
-        tf_data_type, TensorShape({allocate_count}), &temporary_memory));
-    if (!allocation_status.ok()) {
-      return allocation_status;
-    }
-    // Hold the reference of the allocated tensors until the end of the
-    // allocator.
-    allocated_tensors_.push_back(temporary_memory);
-    total_byte_size_ += byte_size;
-    return DeviceMemory<uint8>::MakeFromByteSize(
-        temporary_memory.template flat<T>().data(),
-        temporary_memory.template flat<T>().size() * sizeof(T));
-  }
-
-  int64 TotalByteSize() const { return total_byte_size_; }
-
-  Tensor get_allocated_tensor(int index) const {
-    return allocated_tensors_[index];
-  }
-
- private:
-  int64 total_byte_size_ = 0;
-  OpKernelContext* context_;  // not owned
-  std::vector<Tensor> allocated_tensors_;
-};
-} // end namespace
-#endif // GOOGLE_CUDA
-
-template<typename T>
 class CTCLossOp : public OpKernel {
   typedef Eigen::Map<
       const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
@@ -267,17 +224,32 @@ REGISTER_CPU(double);
 
 #undef REGISTER_CPU
 
-#if GOOGLE_CUDA
+#if ((GOOGLE_CUDA && CUDNN_VERSION >= 7603) || TENSORFLOW_USE_ROCM)
 class CTCLossOpGPU : public OpKernel {
-
  public:
   explicit CTCLossOpGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    bool preprocess_collapse_repeated;
+    bool ctc_merge_repeated;
+    bool ignore_longer_outputs_than_inputs;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("preprocess_collapse_repeated",
-                                     &preprocess_collapse_repeated_));
+                                     &preprocess_collapse_repeated));
     OP_REQUIRES_OK(ctx,
-                   ctx->GetAttr("ctc_merge_repeated", &ctc_merge_repeated_));
+                   ctx->GetAttr("ctc_merge_repeated", &ctc_merge_repeated));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("ignore_longer_outputs_than_inputs",
-                                     &ignore_longer_outputs_than_inputs_));
+                                     &ignore_longer_outputs_than_inputs));
+
+    OP_REQUIRES(ctx, !preprocess_collapse_repeated,
+                errors::InvalidArgument("GPU CTCLossOp requires "
+                                        "preprocess_collapse_repeated to be "
+                                        "false"));
+    OP_REQUIRES(ctx, ctc_merge_repeated,
+                errors::InvalidArgument("GPU CTCLossOp requires "
+                                        "ctc_merge_repeated to be "
+                                        "true"));
+    OP_REQUIRES(ctx, !ignore_longer_outputs_than_inputs,
+                errors::InvalidArgument("GPU CTCLossOp requires "
+                                        "ignore_longer_outputs_than_inputs to"
+                                        "be false"));
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -303,6 +275,12 @@ class CTCLossOpGPU : public OpKernel {
     const int64 max_time_raw = inputs_shape.dim_size(0);
     const int64 batch_size_raw = inputs_shape.dim_size(1);
     const int64 num_classes_raw = inputs_shape.dim_size(2);
+    OP_REQUIRES(ctx,
+                FastBoundsCheck(max_time_raw, std::numeric_limits<int>::max()),
+                errors::InvalidArgument("max_time_ cannot exceed max int"));
+    OP_REQUIRES(
+        ctx, FastBoundsCheck(batch_size_raw, std::numeric_limits<int>::max()),
+        errors::InvalidArgument("batch_size cannot exceed max int"));
     OP_REQUIRES(
         ctx, FastBoundsCheck(num_classes_raw, std::numeric_limits<int>::max()),
         errors::InvalidArgument("num_classes cannot exceed max int"));
@@ -327,7 +305,6 @@ class CTCLossOpGPU : public OpKernel {
     OP_REQUIRES(ctx, batch_size != 0,
                 errors::InvalidArgument("batch_size must not be 0"));
 
-    
     Tensor* loss = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output("loss", seq_len->shape(), &loss));
 
@@ -335,20 +312,7 @@ class CTCLossOpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx,
                    ctx->allocate_output("gradient", inputs_shape, &gradient));
 
-    OP_REQUIRES(ctx, preprocess_collapse_repeated_ == false,
-                errors::InvalidArgument("GPU CTCLossOp requires "
-                                        "preprocess_collapse_repeated to be "
-                                        "false"));
-    OP_REQUIRES(ctx, ctc_merge_repeated_ == true,
-                errors::InvalidArgument("GPU CTCLossOp requires "
-                                        "ctc_merge_repeated_ to be "
-                                        "true"));
-    OP_REQUIRES(ctx, ignore_longer_outputs_than_inputs_ == false,
-                errors::InvalidArgument("GPU CTCLossOp requires "
-                                        "ignore_longer_outputs_than_inputs_ to"
-                                        "be false"));
-
-    // Convert the labels_indices to labels_lengths
+    // Convert the labels_indices to labels_lengths.
     std::vector<int> labels_lengths(batch_size, 0);
     DoHistogram<int64>(ctx, labels_indices, num_indices, batch_size,
                        &labels_lengths);
@@ -356,67 +320,54 @@ class CTCLossOpGPU : public OpKernel {
     StreamExecutor* executor = ctx->op_device_context()->stream()->parent();
     se::dnn::DataType data_type = ToDataType<float>::value;
 
-    std::unique_ptr<CtcLossDescriptor> ctc_loss_desc;
-    std::unique_ptr<RnnStateTensorDescriptor> probs_desc;
-    std::unique_ptr<RnnStateTensorDescriptor> grads_desc;
-
-    auto ctc_loss_desc_s = executor->createCtcLossDescriptor(data_type);
-    OP_REQUIRES_OK(ctx, ctc_loss_desc_s.status());
-    ctc_loss_desc = ctc_loss_desc_s.ConsumeValueOrDie();
-    
     auto probs_desc_s = executor->createRnnStateTensorDescriptor(
         max_time, batch_size, num_classes, data_type);
     OP_REQUIRES_OK(ctx, probs_desc_s.status());
-    probs_desc = probs_desc_s.ConsumeValueOrDie();
+    std::unique_ptr<RnnStateTensorDescriptor> probs_desc =
+        probs_desc_s.ConsumeValueOrDie();
 
     auto grads_desc_s = executor->createRnnStateTensorDescriptor(
         max_time, batch_size, num_classes, data_type);
     OP_REQUIRES_OK(ctx, grads_desc_s.status());
-    grads_desc = grads_desc_s.ConsumeValueOrDie();
+    std::unique_ptr<RnnStateTensorDescriptor> grads_desc =
+        grads_desc_s.ConsumeValueOrDie();
 
-    absl::Span<const int32> labels_data;
-    absl::Span<const int32> labels_lengths_data;
-    absl::Span<const int32> input_lengths_data;
-    labels_data = absl::Span<const int32>(
-        labels_values->flat<int32>().data(), num_indices);
-    labels_lengths_data = absl::Span<const int32>(
-        labels_lengths.data(), batch_size);
-    input_lengths_data = absl::Span<const int32>(
-        seq_len->flat<int32>().data(), batch_size);
+    absl::Span<const int32> labels_data(labels_values->flat<int32>().data(),
+                                        num_indices);
+    absl::Span<const int32> labels_lengths_data(labels_lengths.data(),
+                                                batch_size);
+    absl::Span<const int32> input_lengths_data(seq_len->flat<int32>().data(),
+                                               batch_size);
 
     auto probs_data = StreamExecutorUtil::AsDeviceMemory<float>(*inputs);
     auto costs_data = StreamExecutorUtil::AsDeviceMemory<float>(*loss);
     auto grads_data = StreamExecutorUtil::AsDeviceMemory<float>(*gradient);
 
-    CudnnCtcLossAllocatorInTemp<uint8> workspace_allocator(ctx);
+    // Set the memory limitation to 4GB for workspace memory.
+    DnnScratchAllocator workspace_allocator(1LL << 32, ctx);
 
     Stream* stream = ctx->op_device_context()->stream();
     bool cudnn_launch_status =
         stream
-            ->ThenCtcLoss(
-                *probs_desc, probs_data, labels_data, labels_lengths_data,
-                input_lengths_data, &costs_data, *grads_desc, &grads_data,
-                *ctc_loss_desc, &workspace_allocator)
+            ->ThenCtcLoss(*probs_desc, probs_data, labels_data,
+                          labels_lengths_data, input_lengths_data, &costs_data,
+                          *grads_desc, &grads_data, &workspace_allocator)
             .ok();
 
     if (!cudnn_launch_status) {
-      ctx->SetStatus(
-          errors::Internal("cuDNN CTCLoss launch failure"));
+      ctx->SetStatus(errors::Internal("cuDNN CTCLoss launch failure"));
     }
   }
 
  private:
-  bool preprocess_collapse_repeated_;
-  bool ctc_merge_repeated_;
-  bool ignore_longer_outputs_than_inputs_;
-
   TF_DISALLOW_COPY_AND_ASSIGN(CTCLossOpGPU);
 };
 
-REGISTER_KERNEL_BUILDER(Name("CTCLossV2").Device(DEVICE_GPU)
-                                       .HostMemory("labels_indices")
-                                       .HostMemory("labels_values")
-                                       .HostMemory("sequence_length"),
+REGISTER_KERNEL_BUILDER(Name("CTCLossV2")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("labels_indices")
+                            .HostMemory("labels_values")
+                            .HostMemory("sequence_length"),
                         CTCLossOpGPU);
-#endif // GOOGLE_CUDA
+#endif  // ((GOOGLE_CUDA && CUDNN_VERSION >= 7603)  || TENSORFLOW_USE_ROCM)
 }  // end namespace tensorflow

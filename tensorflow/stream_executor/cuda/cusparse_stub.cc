@@ -55,7 +55,11 @@ cusparseStatus_t GetSymbolNotFoundError() {
 #include "tensorflow/stream_executor/cuda/cusparse_9_0.inc"
 #elif CUDA_VERSION < 10010
 #include "tensorflow/stream_executor/cuda/cusparse_10_0.inc"
-#elif CUSPARSE_VER_MAJOR >= 11
+#elif CUDA_VERSION == 10010
+#include "tensorflow/stream_executor/cuda/cusparse_10_1.inc"
+#elif CUDA_VERSION == 10020
+#include "tensorflow/stream_executor/cuda/cusparse_10_2.inc"
+#elif CUSPARSE_VER_MAJOR == 11 && CUSPARSE_VER_MINOR == 0
 #include "tensorflow/stream_executor/cuda/cusparse_11_0.inc"
 #else
 #include "tensorflow/stream_executor/cuda/cusparse_10_1.inc"

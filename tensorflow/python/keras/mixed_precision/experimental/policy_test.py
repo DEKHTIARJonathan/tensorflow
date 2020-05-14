@@ -18,11 +18,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.eager import context
+from tensorflow.python.framework import config as config_module
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.keras import testing_utils
 from tensorflow.python.keras.engine import base_layer_utils
+from tensorflow.python.keras.mixed_precision.experimental import device_compatibility_check
 from tensorflow.python.keras.mixed_precision.experimental import policy as mp_policy
 from tensorflow.python.keras.optimizer_v2 import gradient_descent
 from tensorflow.python.platform import test
@@ -161,8 +164,29 @@ class PolicyTest(test.TestCase):
           'not passing any loss_scale instead.')
 
     for policy_name in 'float16', 'mixed_float16':
+      # Trigger any other warnings that occur only once
+      mp_policy.Policy(policy_name, loss_scale=2.)
       with test.mock.patch.object(tf_logging, 'warn') as mock_warn:
         mp_policy.Policy(policy_name, loss_scale=2.)
+        mock_warn.assert_not_called()
+
+  @testing_utils.enable_v2_dtype_behavior
+  def test_device_compatibility_warning(self):
+    with context.eager_mode():
+      device_compatibility_check._logged_compatibility_check = False
+      with test.mock.patch.object(tf_logging, 'warn') as mock_warn:
+        mp_policy.Policy('mixed_float16')
+      if config_module.list_physical_devices('GPU'):
+        mock_warn.assert_not_called()
+      else:
+        self.assertRegexpMatches(
+            mock_warn.call_args[0][0],
+            r'Mixed precision compatibility check \(mixed_float16\): WARNING.*')
+
+      if config_module.list_physical_devices('GPU'):
+        # Assert message is only logged once
+        with test.mock.patch.object(tf_logging, 'warn') as mock_warn:
+          mp_policy.Policy('mixed_float16')
         mock_warn.assert_not_called()
 
   @testing_utils.enable_v2_dtype_behavior

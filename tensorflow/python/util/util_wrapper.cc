@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "include/pybind11/pybind11.h"
-#include "include/pybind11/pytypes.h"
+#include "pybind11/pybind11.h"
+#include "pybind11/pytypes.h"
 #include "tensorflow/python/lib/core/pybind11_lib.h"
 #include "tensorflow/python/util/util.h"
 
@@ -139,6 +139,24 @@ PYBIND11_MODULE(_pywrap_utils, m) {
 
       Returns:
         True if `instance` is a `collections.Mapping`.
+    )pbdoc");
+  m.def(
+      "IsMutableMapping",
+      [](const py::handle& o) {
+        bool result = tensorflow::swig::IsMutableMapping(o.ptr());
+        if (PyErr_Occurred()) {
+          throw py::error_already_set();
+        }
+        return result;
+      },
+      R"pbdoc(
+      Returns True if `instance` is a `collections.MutableMapping`.
+
+      Args:
+        instance: An instance of a Python object.
+
+      Returns:
+        True if `instance` is a `collections.MutableMapping`.
     )pbdoc");
   m.def(
       "IsMappingView",

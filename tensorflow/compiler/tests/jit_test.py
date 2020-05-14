@@ -19,10 +19,10 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+
 import numpy as np
 
 from tensorflow.compiler.tests import test_utils
-from tensorflow.python.framework import test_util
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.python.client import session as session_lib
@@ -146,7 +146,6 @@ class JitLaunchTest(test.TestCase):
       call = KernelWithNoOutputs()  # pylint: disable=assignment-from-no-return
       test_utils.RunWithWarmup(sess, call, {})
 
-  @test_util.run_deprecated_v1
   def testAliasing(self):
     """Regression test for compiled functions that return an aliased buffer.
 
@@ -175,7 +174,6 @@ class JitLaunchTest(test.TestCase):
         name="AddOnceReturnTwice_noinline",
         noinline=False)
 
-  @test_util.run_deprecated_v1
   def testOneConstOutput(self):
     """Test consisting of a single constant return value."""
 
@@ -184,7 +182,6 @@ class JitLaunchTest(test.TestCase):
 
     self._compare(OneConstOutput, [], require_kernel_launch=False)
 
-  @test_util.run_deprecated_v1
   def testConstZeroElementOutput(self):
     """Test consisting of a constant zero element return value."""
 
@@ -193,7 +190,6 @@ class JitLaunchTest(test.TestCase):
 
     self._compare(ConstZeroElementOutput, [], require_kernel_launch=False)
 
-  @test_util.run_deprecated_v1
   def testSomeConstOutputs(self):
     """Test kernels that return a mixture of const and non-const outputs."""
 
@@ -205,7 +201,6 @@ class JitLaunchTest(test.TestCase):
         SomeConstOutputs, [np.array(
             [[1, 2, 3], [4, 5, 6]], dtype=np.float32)])
 
-  @test_util.run_deprecated_v1
   def testInt32Input(self):
     """Test an int32-typed input.
 
@@ -217,7 +212,6 @@ class JitLaunchTest(test.TestCase):
 
     self._compare(AddToSelf, [np.array([7, 1, 3], dtype=np.int32)])
 
-  @test_util.run_deprecated_v1
   def testMandatoryConstantInput(self):
     """Tests an operator that has a mandatory-constant shape input."""
 
@@ -226,7 +220,6 @@ class JitLaunchTest(test.TestCase):
 
     self._compare(FillWithFloat, [np.array([3, 2], dtype=np.int32)])
 
-  @test_util.run_deprecated_v1
   def testMnistForwardFunc(self):
     """Compute inference function from MNIST beginners tutorial."""
     batch_size = 16
@@ -242,7 +235,6 @@ class JitLaunchTest(test.TestCase):
     x = np.random.random_sample((batch_size, image_size)).astype(np.float32)
     self._compare(MnistForward, [w, b, x])
 
-  @test_util.run_deprecated_v1
   def testExplicitMarking(self):
     """Test explicit marking of operators to compile."""
     batch_size = 16
@@ -287,7 +279,6 @@ class JitLaunchTest(test.TestCase):
 class XlaCompilationTest(test.TestCase):
   """Tests for auto-compilation on CPU/GPU devices."""
 
-  @test_util.run_deprecated_v1
   def testReshape(self):
     """Tests an operator with compile-time constant and non-constant inputs."""
 
@@ -315,7 +306,6 @@ class XlaCompilationTest(test.TestCase):
       self.assert_(MetadataHasXlaRunOp(run_metadata))
       self.assertAllClose(np.array([[1, 2, 3], [4, 5, 6]], np.float32), out)
 
-  @test_util.run_deprecated_v1
   def testIgnoredArguments(self):
     """Tests that JIT computations can ignore formal parameters."""
 
@@ -344,7 +334,6 @@ class XlaCompilationTest(test.TestCase):
       self.assert_(MetadataHasXlaRunOp(run_metadata))
       self.assertAllClose(28, out)
 
-  @test_util.run_deprecated_v1
   def testLoops(self):
     """Tests that compilation accepts computations containing loops."""
 
@@ -363,7 +352,6 @@ class XlaCompilationTest(test.TestCase):
       self.assert_(MetadataHasXlaRunOp(run_metadata))
       self.assertAllClose(result, np.float32(95), rtol=1e-1)
 
-  @test_util.run_deprecated_v1
   def testCond(self):
     """Tests that compilation handles switch operators."""
 
@@ -393,7 +381,6 @@ class XlaCompilationTest(test.TestCase):
       self.assert_(MetadataHasXlaRunOp(run_metadata))
       self.assertAllClose(result, np.float32(6), rtol=1e-1)
 
-  @test_util.run_deprecated_v1
   def testNestedFunction(self):
     g = ops.Graph()
     with g.as_default():
@@ -423,7 +410,6 @@ class XlaCompilationTest(test.TestCase):
                          trace_level=config_pb2.RunOptions.FULL_TRACE))
       self.assertAllClose(val, [20., 2100.])
 
-  @test_util.run_deprecated_v1
   def testLoopDeadlock(self):
     """Regression test for bug that caused deadlocks in graphs with loops."""
 
@@ -439,7 +425,6 @@ class XlaCompilationTest(test.TestCase):
       result = session.run(u, {x: np.float32(2)})
       self.assertAllClose(result, np.float32(63), rtol=1e-1)
 
-  @test_util.run_deprecated_v1
   def testGradient(self):
     """Tests that the backprop function is properly compiled."""
 
@@ -495,7 +480,6 @@ class XlaCompilationTest(test.TestCase):
 class ElementWiseFusionTest(test.TestCase):
 
   # Runs a simple test with the input jit_level and fusion_only flag.
-  @test_util.run_deprecated_v1
   def simpleTest(self, arg0, arg1, global_jit_level):
     config = config_pb2.ConfigProto()
     config.graph_options.optimizer_options.global_jit_level = global_jit_level
@@ -535,7 +519,6 @@ class ElementWiseFusionTest(test.TestCase):
 
 class LazyCompilationTest(test.TestCase):
 
-  @test_util.run_deprecated_v1
   def testLazyCompilation(self):
 
     @function.Defun(compiled=True)
@@ -600,7 +583,6 @@ class LazyCompilationTest(test.TestCase):
       self.assertFalse(
           InLabels(RunMetadataLabels(run_metadata_for_new_shape), "_XlaRun"))
 
-  @test_util.run_deprecated_v1
   def testIsMegamorphic(self):
 
     @function.Defun(compiled=True)
@@ -631,7 +613,6 @@ class LazyCompilationTest(test.TestCase):
             InLabels(RunMetadataLabels(run_metadata), "_XlaCompile"))
         self.assertFalse(InLabels(RunMetadataLabels(run_metadata), "_XlaRun"))
 
-  @test_util.run_deprecated_v1
   def testIsNotMegamorphic(self):
 
     @function.Defun(compiled=True)
@@ -667,4 +648,7 @@ class LazyCompilationTest(test.TestCase):
 if __name__ == "__main__":
   os.environ["TF_XLA_FLAGS"] = ("--tf_xla_enable_lazy_compilation=true " +
                                 os.environ.get("TF_XLA_FLAGS", ""))
+  # This test is using Tensorflow sessions which are not compatible with eager
+  # mode.
+  ops.disable_eager_execution()
   test.main()

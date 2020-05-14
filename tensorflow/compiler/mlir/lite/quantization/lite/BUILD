@@ -9,9 +9,10 @@ package(
 
 package_group(
     name = "friends",
-    includes = ["@local_config_mlir//:subpackages"],
+    includes = ["//third_party/mlir:subpackages"],
     packages = [
         "//learning/brain/experimental/mlir/...",
+        "//tensorflow/compiler/mlir/lite/...",
         "//tensorflow/lite/...",
     ],
 )
@@ -23,7 +24,6 @@ cc_library(
     ],
     hdrs = [
         "quantize_model.h",
-        "//tensorflow/compiler/mlir/lite:transforms/passes.h",
     ],
     deps = [
         "//tensorflow/compiler/mlir/lite:common",
@@ -31,14 +31,32 @@ cc_library(
         "//tensorflow/compiler/mlir/lite:tensorflow_lite_quantize",
         "//tensorflow/compiler/mlir/lite/quantization:quantization_config",
         "//tensorflow/compiler/mlir/tensorflow:error_util",
-        "//tensorflow/core:protos_all_proto_cc",
+        "//tensorflow/core:protos_all_cc",
         "//tensorflow/lite:framework",
         "//tensorflow/lite/core/api",
         "//tensorflow/lite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
-        "@llvm//:support",
-        "@local_config_mlir//:IR",
-        "@local_config_mlir//:Pass",
+        "@llvm-project//llvm:support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+    ],
+)
+
+cc_library(
+    name = "tfl_to_std",
+    srcs = [
+        "tfl_to_std.cc",
+    ],
+    hdrs = [
+        "tfl_to_std.h",
+    ],
+    deps = [
+        "//tensorflow/compiler/mlir/lite:tensorflow_lite",
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:QuantOps",
     ],
 )
 
@@ -53,6 +71,6 @@ tf_cc_binary(
         "//tensorflow/lite:framework",
         "//tensorflow/lite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
-        "@llvm//:support",
+        "@llvm-project//llvm:support",
     ],
 )

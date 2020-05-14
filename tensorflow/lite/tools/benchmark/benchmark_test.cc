@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@ limitations under the License.
 #include "absl/algorithm/algorithm.h"
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/testing/util.h"
+#include "tensorflow/lite/tools/benchmark/benchmark_performance_options.h"
 #include "tensorflow/lite/tools/benchmark/benchmark_tflite_model.h"
 #include "tensorflow/lite/tools/command_line_flags.h"
 
@@ -60,6 +62,10 @@ BenchmarkParams CreateParams(int32_t num_runs, float min_secs, float max_secs,
   params.AddParam("input_layer_shape", BenchmarkParam::Create<std::string>(""));
   params.AddParam("input_layer_value_range",
                   BenchmarkParam::Create<std::string>(""));
+  params.AddParam("input_layer_value_files",
+                  BenchmarkParam::Create<std::string>(""));
+  params.AddParam("use_hexagon", BenchmarkParam::Create<bool>(false));
+  params.AddParam("use_xnnpack", BenchmarkParam::Create<bool>(false));
   params.AddParam("use_nnapi", BenchmarkParam::Create<bool>(false));
   params.AddParam("allow_fp16", BenchmarkParam::Create<bool>(false));
   params.AddParam("require_full_delegation",
@@ -74,6 +80,10 @@ BenchmarkParams CreateParams(int32_t num_runs, float min_secs, float max_secs,
                   BenchmarkParam::Create<std::string>(""));
   params.AddParam("nnapi_execution_preference",
                   BenchmarkParam::Create<std::string>(""));
+  params.AddParam("disable_nnapi_cpu", BenchmarkParam::Create<bool>(false));
+  params.AddParam("max_delegated_partitions", BenchmarkParam::Create<int>(0));
+  params.AddParam("profiling_output_csv_file",
+                  BenchmarkParam::Create<std::string>(""));
   return params;
 }
 
@@ -83,6 +93,22 @@ BenchmarkParams CreateFp32Params() {
 }
 BenchmarkParams CreateInt8Params() {
   return CreateParams(2, 1.0f, 150.0f, ModelGraphType::INT8);
+}
+
+std::string CreateFilePath(const std::string& file_name) {
+  return std::string(getenv("TEST_TMPDIR")) + file_name;
+}
+
+void WriteInputLayerValueFile(const std::string& file_path,
+                              ModelGraphType graph_type, int num_elements) {
+  std::ofstream file(file_path);
+  int bytes =
+      graph_type == ModelGraphType::FP32 ? 4 * num_elements : num_elements;
+  // TODO(b/150335637): Add a test to check the initialization of the input
+  // tensor.
+  char* buffer = new char[bytes]();
+  file.write(buffer, bytes);
+  delete[](buffer);
 }
 
 class TestBenchmark : public BenchmarkTfLiteModel {
@@ -111,6 +137,24 @@ TEST(BenchmarkTest, DoesntCrashInt8Model) {
   benchmark.Run();
 }
 
+TEST(BenchmarkTest, DoesntCrashMultiPerfOptions) {
+  ASSERT_THAT(g_fp32_model_path, testing::NotNull());
+
+  BenchmarkTfLiteModel benchmark(CreateFp32Params());
+  BenchmarkPerformanceOptions all_options_benchmark(&benchmark);
+  all_options_benchmark.Run();
+}
+
+TEST(BenchmarkTest, DoesntCrashMultiPerfOptionsWithProfiling) {
+  ASSERT_THAT(g_fp32_model_path, testing::NotNull());
+
+  BenchmarkParams params = CreateFp32Params();
+  params.Set<bool>("enable_op_profiling", true);
+  BenchmarkTfLiteModel benchmark(std::move(params));
+  BenchmarkPerformanceOptions all_options_benchmark(&benchmark);
+  all_options_benchmark.Run();
+}
+
 TEST(BenchmarkTest, DoesntCrashWithExplicitInputFp32Model) {
   ASSERT_THAT(g_fp32_model_path, testing::NotNull());
 
@@ -136,6 +180,40 @@ TEST(BenchmarkTest, DoesntCrashWithExplicitInputInt8Model) {
   params.Set<std::string>("input_layer", "a");
   params.Set<std::string>("input_layer_shape", "1,8,8,3");
   params.Set<std::string>("input_layer_value_range", "a,1,10");
+  BenchmarkTfLiteModel benchmark(std::move(params));
+  benchmark.Run();
+}
+
+TEST(BenchmarkTest, DoesntCrashWithExplicitInputValueFilesFp32Model) {
+  ASSERT_THAT(g_fp32_model_path, testing::NotNull());
+  const std::string file_path = CreateFilePath("fp32_binary");
+  WriteInputLayerValueFile(file_path, ModelGraphType::FP32, 192);
+
+  // Note: the following input-related params are *specific* to model
+  // 'g_fp32_model_path' which is specified as 'lite:testdata/multi_add.bin for
+  // the test.
+  BenchmarkParams params = CreateFp32Params();
+  params.Set<std::string>("input_layer", "a,b,c,d");
+  params.Set<std::string>("input_layer_shape",
+                          "1,8,8,3:1,8,8,3:1,8,8,3:1,8,8,3");
+  params.Set<std::string>("input_layer_value_files",
+                          "d:" + file_path + ",b:" + file_path);
+  BenchmarkTfLiteModel benchmark(std::move(params));
+  benchmark.Run();
+}
+
+TEST(BenchmarkTest, DoesntCrashWithExplicitInputValueFilesInt8Model) {
+  ASSERT_THAT(g_int8_model_path, testing::NotNull());
+  const std::string file_path = CreateFilePath("int8_binary");
+  WriteInputLayerValueFile(file_path, ModelGraphType::INT8, 192);
+
+  // Note: the following input-related params are *specific* to model
+  // 'g_int8_model_path' which is specified as
+  // 'lite:testdata/add_quantized_int8.bin for the test.
+  BenchmarkParams params = CreateInt8Params();
+  params.Set<std::string>("input_layer", "a");
+  params.Set<std::string>("input_layer_shape", "1,8,8,3");
+  params.Set<std::string>("input_layer_value_files", "a:" + file_path);
   BenchmarkTfLiteModel benchmark(std::move(params));
   benchmark.Run();
 }

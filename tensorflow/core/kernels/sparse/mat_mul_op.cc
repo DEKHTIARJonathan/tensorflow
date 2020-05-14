@@ -15,7 +15,7 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define EIGEN_USE_GPU
 #endif
 
@@ -36,7 +36,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/platform/threadpool.h"
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/kernels/cuda_solvers.h"
 #include "tensorflow/core/kernels/cuda_sparse.h"
 #endif
@@ -694,7 +694,7 @@ REGISTER_CPU(complex128)
 
 #undef REGISTER_CPU
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define REGISTER_GPU(T)                                                     \
   REGISTER_KERNEL_BUILDER(                                                  \
@@ -703,14 +703,16 @@ REGISTER_CPU(complex128)
 
 REGISTER_GPU(float)
 REGISTER_GPU(double)
+#if GOOGLE_CUDA
 REGISTER_GPU(complex64)
 REGISTER_GPU(complex128)
+#endif
 
 #undef REGISTER_GPU
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 namespace functor {
 
@@ -727,53 +729,39 @@ struct CUDADataType<Eigen::half> {
 };
 
 template <>
-struct CUDADataType<std::complex<Eigen::half>> {
-  static constexpr cudaDataType_t type = CUDA_C_16F;
-};
-
-template <>
 struct CUDADataType<float> {
+#if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_R_32F;
+#elif TENSORFLOW_USE_ROCM
+  static constexpr cudaDataType_t type = HIPBLAS_R_32F;
+#endif
 };
 
 template <>
 struct CUDADataType<std::complex<float>> {
+#if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_C_32F;
+#elif TENSORFLOW_USE_ROCM
+  static constexpr cudaDataType_t type = HIPBLAS_C_32F;
+#endif
 };
 
 template <>
 struct CUDADataType<double> {
+#if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_R_64F;
+#elif TENSORFLOW_USE_ROCM
+  static constexpr cudaDataType_t type = HIPBLAS_R_64F;
+#endif
 };
 
 template <>
 struct CUDADataType<std::complex<double>> {
+#if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_C_64F;
-};
-
-template <>
-struct CUDADataType<int> {
-  static constexpr cudaDataType_t type = CUDA_R_32I;
-};
-
-template <>
-struct CUDADataType<int8> {
-  static constexpr cudaDataType_t type = CUDA_R_8I;
-};
-
-template <>
-struct CUDADataType<std::complex<int8>> {
-  static constexpr cudaDataType_t type = CUDA_C_8I;
-};
-
-template <>
-struct CUDADataType<uint8> {
-  static constexpr cudaDataType_t type = CUDA_R_8U;
-};
-
-template <>
-struct CUDADataType<std::complex<uint8>> {
-  static constexpr cudaDataType_t type = CUDA_C_8U;
+#elif TENSORFLOW_USE_ROCM
+  static constexpr cudaDataType_t type = HIPBLAS_C_64F;
+#endif
 };
 
 }  // namespace
@@ -787,13 +775,13 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
   Status Compute(OpKernelContext* ctx, const ConstCSRComponent<T>& a,
                  typename TTypes<T>::UnalignedConstMatrix b,
                  typename TTypes<T>::UnalignedMatrix c) {
-    CudaSparse cuda_sparse(ctx);
+    GpuSparse cuda_sparse(ctx);
     TF_RETURN_IF_ERROR(cuda_sparse.Initialize());
     {
-      // Use SpMM to calculate:
+      // Use Csrmm/SpMM to calculate:
       //   C = alpha * op(A) * op(B) + beta * C
       // where alpha = 1.0, beta = 0.0, A is sparse and B and C are dense.
-      // Note that SpMM assumes B and C are in column-major form; so we
+      // Note that Csrmm/Spmm assumes B and C are in column-major form; so we
       // use transB == true, and manually transpose the output in place
       // using blas<t>geam.
       // TODO(ebrevdo,rmlarsen): Add support for transposition and adjoint.
@@ -802,14 +790,6 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       // TODO(ebrevdo,rmlarsen): Add support for non-trivial alpha and beta.
       const T alpha = 1;
       const T beta = 0;
-
-      // TODO(nluehr): Maybe also support transpose A now that SpMM is used.
-      const cusparseOperation_t transA = CUSPARSE_OPERATION_NON_TRANSPOSE;
-
-      // transB: b is row-major, and cusparse requires col-major b (or
-      // equivalently transB == transpose).  this version is actually more
-      // efficient.
-      const cusparseOperation_t transB = CUSPARSE_OPERATION_TRANSPOSE;
 
       // A is (m, k), Bt is (ldb, k) and Ct is (ldc, n)
       const int k = b.dimension(0);
@@ -830,44 +810,92 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       // ldb: leading dimension of B. If op(B)=B, it must be at least max(1, k)
       // if op(A) = A and at least max (1, m) otherwise. If op(B) != B, it must
       // be at least max(1, n).
-      const int64_t ldb = n;
+      const int ldb = n;
       // ldc: leading dimension of C. It must be at least max(1, m) if
       // op(A) = A and at least max(1, k) otherwise.
-      const int64_t ldc = m;
+      const int ldc = m;
 
-      cusparseSpMatDescr_t matA;
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateCsr(&matA, m, k, nnz,
-                                  const_cast<int*>(a.row_ptr.data()),
-                                  const_cast<int*>(a.col_ind.data()),
-                                  const_cast<T*>(a.values.data()),
-                                  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-                                  CUSPARSE_INDEX_BASE_ZERO, CUDADataType<T>::type));
+      // transA must be non-transpose if transB is transpose (cusparse
+      // limitation).
+#if GOOGLE_CUDA
+      const gpusparseOperation_t transA = CUSPARSE_OPERATION_NON_TRANSPOSE;
+#elif TENSORFLOW_USE_ROCM
+      const gpusparseOperation_t transA = HIPSPARSE_OPERATION_NON_TRANSPOSE;
+#endif
 
-      cusparseDnMatDescr_t matB, matC;
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateDnMat(&matB, n, k, ldb,
-                                  const_cast<T*>(b.data()),
-                                  CUDADataType<T>::type, CUSPARSE_ORDER_COL));
+      // transB: b is row-major, and cusparse requires col-major b (or
+      // equivalently transB == transpose).  this version is actually more
+      // efficient.
+#if GOOGLE_CUDA && CUDA_VERSION >= 10020
 
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseCreateDnMat(&matC, m, n, ldc, c.data(),
-                                  CUDADataType<T>::type, CUSPARSE_ORDER_COL));
-      
+      const gpusparseOperation_t transB = CUSPARSE_OPERATION_TRANSPOSE;
+      gpusparseSpMatDescr_t matA;
+      gpusparseDnMatDescr_t matB, matC;
+
+      // NOTE: the following APIs are not available in ROCM
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseCreateCsr(
+          &matA, m, k, nnz, const_cast<int*>(a.row_ptr.data()),
+          const_cast<int*>(a.col_ind.data()), const_cast<T*>(a.values.data()),
+          CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO,
+          CUDADataType<T>::type));
+
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseCreateDnMat(&matB, n, k, ldb, const_cast<T*>(b.data()),
+                              CUDADataType<T>::type, CUSPARSE_ORDER_COL));
+
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseCreateDnMat(&matC, m, n, ldc, c.data(), CUDADataType<T>::type,
+                              CUSPARSE_ORDER_COL));
+
       size_t bufferSize = 0;
-      TF_RETURN_IF_ERROR(
-          cuda_sparse.SpMMBufferSize(transA, transB, &alpha, matA, matB, &beta,
-                                     matC, CUSPARSE_MM_ALG_DEFAULT,
-                                     &bufferSize));
+      TF_RETURN_IF_ERROR(cuda_sparse.SpMMBufferSize(
+          transA, transB, &alpha, matA, matB, &beta, matC,
+          CUSPARSE_MM_ALG_DEFAULT, &bufferSize));
 
       Tensor buffer;
-      TF_RETURN_IF_ERROR(ctx->allocate_temp(DT_INT8, {bufferSize}, &buffer));
+      TF_RETURN_IF_ERROR(ctx->allocate_temp(
+          DT_INT8, TensorShape({static_cast<int64>(bufferSize)}), &buffer));
       DCHECK(buffer.flat<int8>().data() != nullptr);
-      TF_RETURN_IF_ERROR(
-          cuda_sparse.SpMM(transA, transB, &alpha, matA, matB, &beta,
-                           matC, CUSPARSE_MM_ALG_DEFAULT,
-                           buffer.flat<int8>().data()));
 
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroyDnMat(matB));
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroyDnMat(matC));
-      TF_RETURN_IF_CUSPARSE_ERROR(cusparseDestroySpMat(matA));
+      TF_RETURN_IF_ERROR(cuda_sparse.SpMM(transA, transB, &alpha, matA, matB,
+                                          &beta, matC, CUSPARSE_MM_ALG_DEFAULT,
+                                          buffer.flat<int8>().data()));
+
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseDestroyDnMat(matB));
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseDestroyDnMat(matC));
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseDestroySpMat(matA));
+
+#else
+
+#if GOOGLE_CUDA
+
+      const gpusparseOperation_t transB = CUSPARSE_OPERATION_TRANSPOSE;
+
+      gpusparseMatDescr_t descrA;
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseCreateMatDescr(&descrA));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO));
+
+#elif TENSORFLOW_USE_ROCM
+
+      const gpusparseOperation_t transB = HIPSPARSE_OPERATION_TRANSPOSE;
+
+      gpusparseMatDescr_t descrA;
+      TF_RETURN_IF_GPUSPARSE_ERROR(hipsparseCreateMatDescr(&descrA));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          hipsparseSetMatType(descrA, HIPSPARSE_MATRIX_TYPE_GENERAL));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          hipsparseSetMatIndexBase(descrA, HIPSPARSE_INDEX_BASE_ZERO));
+#endif  // GOOGLE_CUDA
+
+      TF_RETURN_IF_ERROR(
+          cuda_sparse.Csrmm(transA, transB, m, n, k, nnz, &alpha, descrA,
+                            a.values.data(), a.row_ptr.data(), a.col_ind.data(),
+                            b.data(), ldb, &beta, c.data(), ldc));
+
+#endif  // GOOGLE_CUDA && CUDA_VERSION >= 10020
     }
 
     return Status::OK();
@@ -881,16 +909,16 @@ template <typename T>
 class CSRSparseMatrixMatVec<GPUDevice, T> {
  public:
   CSRSparseMatrixMatVec(bool transpose_a, bool conjugate_a)
-      : transA_(TransposeAndConjugateToCuSparseOp(transpose_a, conjugate_a,
-                                                  &status_)) {}
+      : transA_(TransposeAndConjugateToGpuSparseOp(transpose_a, conjugate_a,
+                                                   &status_)) {}
 
   Status Compute(OpKernelContext* ctx, const ConstCSRComponent<T>& a,
                  const T* x, T* y) {
     TF_RETURN_IF_ERROR(status_);
-    CudaSparse cuda_sparse(ctx);
+    GpuSparse cuda_sparse(ctx);
     TF_RETURN_IF_ERROR(cuda_sparse.Initialize());
     {
-      // Use CsrmvEx/SpMV to calculate:
+      // Use Csrmv to calculate:
       //   y = alpha * op(A) * x + beta * y
       // where alpha = 1.0, beta = 0.0, A is a sparse matrix and x and y are
       // dense vectors.
@@ -900,13 +928,35 @@ class CSRSparseMatrixMatVec<GPUDevice, T> {
       const T alpha = 1;
       const T beta = 0;
 
+#if GOOGLE_CUDA && CUDA_VERSION < 10020
+      gpusparseMatDescr_t descrA;
+      TF_RETURN_IF_GPUSPARSE_ERROR(cusparseCreateMatDescr(&descrA));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO));
+#elif TENSORFLOW_USE_ROCM
+      gpusparseMatDescr_t descrA;
+      TF_RETURN_IF_GPUSPARSE_ERROR(hipsparseCreateMatDescr(&descrA));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          hipsparseSetMatType(descrA, HIPSPARSE_MATRIX_TYPE_GENERAL));
+      TF_RETURN_IF_GPUSPARSE_ERROR(
+          hipsparseSetMatIndexBase(descrA, HIPSPARSE_INDEX_BASE_ZERO));
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
       const int m = a.dense_shape_host(0);
       const int n = a.dense_shape_host(1);
       const int nnz = a.values.size();
       DCHECK_EQ(nnz, a.col_ind.size());
+#if CUDA_VERSION >= 10020
       TF_RETURN_IF_ERROR(cuda_sparse.Csrmv(transA_, m, n, nnz, &alpha,
                                            a.values.data(), a.row_ptr.data(),
                                            a.col_ind.data(), x, &beta, y));
+#else
+      TF_RETURN_IF_ERROR(cuda_sparse.Csrmv(transA_, m, n, nnz, &alpha, descrA,
+                                           a.values.data(), a.row_ptr.data(),
+                                           a.col_ind.data(), x, &beta, y));
+#endif
     }
 
     return Status::OK();
@@ -914,11 +964,11 @@ class CSRSparseMatrixMatVec<GPUDevice, T> {
 
  private:
   Status status_;
-  const cusparseOperation_t transA_;
+  const gpusparseOperation_t transA_;
 };
 
 }  // namespace functor
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace tensorflow

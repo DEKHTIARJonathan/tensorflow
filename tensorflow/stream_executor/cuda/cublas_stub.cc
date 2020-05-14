@@ -66,7 +66,11 @@ typedef enum {} cublasMath_t;
 #include "tensorflow/stream_executor/cuda/cublas_9_0.inc"
 #elif CUDA_VERSION < 10010
 #include "tensorflow/stream_executor/cuda/cublas_10_0.inc"
-#elif CUBLAS_VER_MAJOR >= 11
+#elif CUDA_VERSION == 10010
+#include "tensorflow/stream_executor/cuda/cublas_10_1.inc"
+#elif CUDA_VERSION == 10020
+#include "tensorflow/stream_executor/cuda/cublas_10_2.inc"
+#elif CUBLAS_VER_MAJOR == 11 && CUBLAS_VER_MINOR == 0
 #include "tensorflow/stream_executor/cuda/cublas_11_0.inc"
 #else
 #include "tensorflow/stream_executor/cuda/cublas_10_1.inc"

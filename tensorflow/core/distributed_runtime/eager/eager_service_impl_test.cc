@@ -96,6 +96,8 @@ class FakeEagerClient : public EagerClient {
     done(impl_->Enqueue(request, response));
   }
 
+  bool allow_multiple_pending_requests() const override { return false; }
+
  private:
   TestEagerServiceImpl* impl_;
 };
@@ -103,13 +105,15 @@ class FakeEagerClient : public EagerClient {
 class DummyEagerClientCache : public EagerClientCache {
  public:
   DummyEagerClientCache() : client_(new FakeEagerClient) {}
-  Status GetClient(const string& target, EagerClient** client) override {
-    *client = client_.get();
+  Status GetClient(const string& target,
+                   core::RefCountPtr<EagerClient>* client) override {
+    client->reset(client_.get());
+    client_->Ref();
     return Status::OK();
   }
 
  private:
-  std::unique_ptr<EagerClient> client_;
+  core::RefCountPtr<EagerClient> client_;
 };
 
 class FakeCache : public TestWorkerCache {
@@ -230,6 +234,12 @@ tensorflow::FunctionDef MatMulFunction() {
       "        key: 'T'"
       "        value {"
       "          type: DT_FLOAT"
+      "        }"
+      "      }"
+      "      attr {"
+      "        key: 'transpose_a'"
+      "        value {"
+      "          b: false"
       "        }"
       "      }"
       "    }"
@@ -468,6 +478,15 @@ class FunctionWithRemoteInputsTest : public EagerServiceImplTest {
         serialize_remote_handle_;
   };
 
+  bool MatMulHasAttrWithDefaultValue(const tensorflow::FunctionDef& fdef) {
+    for (const auto& node : fdef.node_def()) {
+      if (node.op() == "MatMul") {
+        return node.attr().find("transpose_a") != node.attr().end();
+      }
+    }
+    return false;
+  }
+
   void Init() {
     CreateContextRequest request;
     request.mutable_server_def()->set_job_name("localhost");
@@ -481,9 +500,9 @@ class FunctionWithRemoteInputsTest : public EagerServiceImplTest {
     TF_ASSERT_OK(eager_service_impl_.GetEagerContext(context_id_, &ctx));
     Device* device;
     TF_ASSERT_OK(ctx->FindDeviceFromName(local_device_.c_str(), &device));
-    EagerClient* client;
+    core::RefCountPtr<EagerClient> client;
     TF_ASSERT_OK(ctx->GetClient(device, &client));
-    FakeEagerClient* fake_client = static_cast<FakeEagerClient*>(client);
+    FakeEagerClient* fake_client = static_cast<FakeEagerClient*>(client.get());
     fake_client->SetServiceImpl(&eager_service_impl_);
 
     // Create an input on local_device for MatMulFunction.
@@ -557,8 +576,18 @@ TEST_F(FunctionWithRemoteInputsTest, EagerPFLRTest) {
   options.is_multi_device_function = true;
   options.input_devices.push_back(local_device_);
   FunctionLibraryRuntime::Handle handle;
+  EXPECT_TRUE(MatMulHasAttrWithDefaultValue(fdef_));
   TF_ASSERT_OK(eager_pflr_->Instantiate(
       fdef_.signature().name(), AttrSlice(&fdef_.attr()), options, &handle));
+  EagerContext* ctx = nullptr;
+  TF_ASSERT_OK(eager_service_impl_.GetEagerContext(context_id_, &ctx));
+  for (const string& func_name : ctx->FuncLibDef()->ListFunctionNames()) {
+    const FunctionDef* fdef = ctx->FuncLibDef()->Find(func_name);
+    EXPECT_TRUE(fdef != nullptr);
+    if (absl::StartsWith(func_name, "MatMulFunction")) {
+      EXPECT_FALSE(MatMulHasAttrWithDefaultValue(*fdef));
+    }
+  }
   bool is_cross_process = false;
   TF_CHECK_OK(eager_pflr_->IsCrossProcess(handle, &is_cross_process));
   EXPECT_TRUE(is_cross_process);
@@ -609,7 +638,7 @@ TEST_F(FunctionWithRemoteInputsTest, KernelAndDeviceFuncTest) {
       flr, eager_pflr_.get(), std::move(input_dev_ptrs), {}, /*runner=*/nullptr,
       /*collective_executor=*/nullptr, local_device, fdef_.signature().name(),
       [ctx](const int64 step_id) { return ctx->CreateRendezvous(step_id); },
-      []() { return op_id; }));
+      [=]() { return op_id; }));
 
   // Instantiate MatMulFunction on remote_device.
   const NodeDef node_def = MatMulFunctionNodeDef();
@@ -683,7 +712,7 @@ TEST_F(EagerServiceImplTest, SendTensorTest) {
       context_id, RemoteTensorHandleInternal(2, 0), &tensor_handle));
   TF_ASSERT_OK(tensor_handle->Tensor(&t));
 
-  Device* device = tensor_handle->device();
+  Device* device = absl::get<Device*>(tensor_handle->device());
   EXPECT_EQ(device, nullptr);
 
   auto actual = t->flat<float>();
