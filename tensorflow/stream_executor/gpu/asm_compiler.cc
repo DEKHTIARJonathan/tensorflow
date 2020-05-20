@@ -212,6 +212,18 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
   if (options.disable_gpuasm_optimizations) {
     ptxas_args.push_back("-O0");
   }
+
+  char* extra_options = GetTFExtraPTXOptions();
+  if (extra_options) {
+    for (auto val: absl::StrSplit(extra_options, ' ')) {
+      ptxas_args.push_back(string(val));
+    }
+  }
+
+  if (VLOG_IS_ON(3)) {
+    VLOG(3) << absl::StrJoin(ptxas_args, " ");
+  }
+
   ptxas_info_dumper.SetProgram(ptxas_path, ptxas_args);
   ptxas_info_dumper.SetChannelAction(tensorflow::CHAN_STDERR,
                                      tensorflow::ACTION_PIPE);
@@ -233,6 +245,16 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
                                                   cubin_path, &cubin));
   std::vector<uint8> cubin_vector(cubin.begin(), cubin.end());
   return cubin_vector;
+}
+
+char* GetTFExtraPTXOptions() {
+  static bool fetched = false;
+  static char* env = nullptr;
+  if (!fetched) {
+    env = getenv("TF_EXTRA_PTXAS_OPTIONS");
+    fetched = true;
+  }
+  return env;
 }
 
 #endif
