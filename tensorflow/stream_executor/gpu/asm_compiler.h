@@ -52,6 +52,9 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
 port::StatusOr<absl::Span<const uint8>> CompileGpuAsmOrGetCached(
     int device_ordinal, const char* ptx, GpuAsmOpts compilation_options);
 
+// Return the extra PTX options defined via the TF_EXTRA_PTXAS_OPTIONS
+// environment variable.
+char* GetTFExtraPTXOptions();
 }  // namespace stream_executor
 
 #endif  // TENSORFLOW_STREAM_EXECUTOR_GPU_ASM_COMPILER_H_
