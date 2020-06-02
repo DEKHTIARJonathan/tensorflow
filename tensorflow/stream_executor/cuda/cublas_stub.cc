@@ -70,8 +70,8 @@ typedef enum {} cublasMath_t;
 #include "tensorflow/stream_executor/cuda/cublas_10_1.inc"
 #elif CUDA_VERSION == 10020
 #include "tensorflow/stream_executor/cuda/cublas_10_2.inc"
-#elif CUBLAS_VER_MAJOR == 11 && CUBLAS_VER_MINOR == 0
+#elif CUBLAS_VER_MAJOR >= 11
 #include "tensorflow/stream_executor/cuda/cublas_11_0.inc"
 #else
-#include "tensorflow/stream_executor/cuda/cublas_10_1.inc"
+#error "We have no wrapper for this version."
 #endif
