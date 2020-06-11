@@ -2793,6 +2793,8 @@ TEST_P(OpConverterTest2, ConvertSquare) {
 }
 
 #if IS_TRT_VERSION_GE(5, 1, 0, 0)
+// TODO: @mconley @jdekhtiar - Reactivate when fixed
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 TEST_F(OpConverterTest, ConvertCombinedNMS) {
   // Get the NodeDef for CombinedNMS.
   auto get_nms_nodedef = []() -> NodeDef {
@@ -2888,6 +2890,7 @@ TEST_F(OpConverterTest, ConvertCombinedNMS) {
     EXPECT_THAT(GetSpanForData<int32>(output_data[3]), ElementsAre(2));
   }
 }
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 #endif  // IS_TRT_VERSION_GE(5, 1, 0, 0)
 
 template <typename T>
@@ -6410,6 +6413,8 @@ TEST_P(OpConverterTest2, ConvertSquaredDifference) {
 }
 
 #if IS_TRT_VERSION_GE(6, 0, 0, 0)
+// TODO: @mconley @jdekhtiar - Reactivate when fixed
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 template <typename OpType>
 NodeDef MakeResizeNodeDef(std::string name, DataType dtype,
                           bool align_corners) {
@@ -6527,6 +6532,7 @@ TEST_F(OpConverterTest, ConvertResize) {
   TestConvertResize<ops::ResizeNearestNeighbor, DT_FLOAT>(this);
   TestConvertResize<ops::ResizeNearestNeighbor, DT_HALF>(this);
 }
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 #endif  // IS_TRT_VERSION_GE(6, 0, 0, 0)
 
 NodeDef MakePadNodeDef(std::string name, DataType dtype) {
