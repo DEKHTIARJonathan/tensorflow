@@ -92,6 +92,8 @@ class CombinedNmsTest(trt_test.TfTrtIntegrationTestBase):
   def ShouldRunTest(self, run_params):
     # There is no CombinedNonMaxSuppression op for GPU at the moment, so
     # calibration will fail.
+    # TODO(@mconley @jdekhtiar): remove skipped test when fixed
+    return False
     # TODO(laigd): fix this.
     # Only run for TRT 5.1 and above.
     ver = get_linked_tensorrt_version()
