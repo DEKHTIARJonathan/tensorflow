@@ -5678,7 +5678,10 @@ static void RegisterValidatableOpConverters(
   (*registration)["ClipByValue"] = ConvertClipByValue;
 #endif
 #if IS_TRT_VERSION_GE(5, 1, 0, 0)
+// TODO: @mconley @jdekhtiar - Removed when fixed
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   (*registration)["CombinedNonMaxSuppression"] = ConvertCombinedNMS;
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 #endif
   (*registration)["AddN"] = ConvertAddN;
   (*registration)["ConcatV2"] = ConvertConcat;
@@ -5700,9 +5703,12 @@ static void RegisterValidatableOpConverters(
 #if IS_TRT_VERSION_GE(6, 0, 0, 0)
   (*registration)["Conv3D"] = ConvertConv3D;
   (*registration)["Conv3DBackpropInputV2"] = ConvertConv3DBackpropInputV2;
+// TODO: @mconley @jdekhtiar - Removed when fixed
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   for (auto resize_mode : {"ResizeBilinear", "ResizeNearestNeighbor"}) {
     (*registration)[resize_mode] = ConvertResize;
   }
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   for (auto pool_op_type : {"AvgPool3D", "MaxPool3D"}) {
     (*registration)[pool_op_type] = ConvertPool3D;
   }
