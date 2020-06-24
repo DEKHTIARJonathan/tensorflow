@@ -84,6 +84,7 @@ cc_library(
     deps = [
         ":trt_allocator",
         ":trt_conversion",
+        ":trt_engine_utils",
         ":trt_logging",
         ":trt_plugins",
         ":trt_resources",
@@ -209,7 +210,22 @@ cc_library(
     deps = [
         ":get_calibration_data_op_op_lib",
         ":trt_engine_op_op_lib",
+        ":trt_engine_utils",
     ],
+)
+
+tf_cuda_library(
+    name = "trt_engine_utils",
+    srcs = ["utils/trt_engine_utils.cc"],
+    hdrs = ["utils/trt_engine_utils.h"],
+    deps = [
+        ":trt_logging",
+        ":utils",
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core/platform:status",
+    ] + if_tensorrt([":tensorrt_lib"]),
 )
 
 tf_cuda_library(
@@ -362,6 +378,7 @@ tf_cuda_library(
         ":utils",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
+        "//tensorflow/core:core_cpu",
         "//tensorflow/core/grappler/clusters:cluster",
         "//tensorflow/core/grappler/optimizers:custom_graph_optimizer",
         "//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry",
@@ -380,6 +397,7 @@ tf_cuda_library(
         "//tensorflow/core/grappler/costs:graph_properties",
         "//tensorflow/core/grappler/optimizers:meta_optimizer",
         "//tensorflow/stream_executor/lib",
+        "//tensorflow/tools/graph_transforms:transform_utils",
     ] + if_tensorrt([":tensorrt_lib"]) + tf_custom_op_library_additional_deps(),
     alwayslink = 1,
 )
@@ -429,6 +447,8 @@ tf_cuda_cc_test(
         ":trt_logging",
         ":trt_conversion",
         ":trt_plugins",
+        ":trt_engine_utils",
+        ":utils",
         "@com_google_googletest//:gtest",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -462,12 +482,16 @@ cc_library(
     ],
     copts = tf_copts(),
     deps = [
+        "//tensorflow/core:core_cpu",
         "//tensorflow/core:graph",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:lib_proto_parsing",
         "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/grappler/costs:graph_properties",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
         "@com_google_protobuf//:protobuf_headers",
     ],
 )
@@ -525,6 +549,7 @@ cc_library(
     hdrs = ["convert/utils.h"],
     copts = tf_copts(),
     deps = [
+        "@com_google_absl//absl/algorithm:container",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib_proto_parsing",
         "//tensorflow/core:lib",
