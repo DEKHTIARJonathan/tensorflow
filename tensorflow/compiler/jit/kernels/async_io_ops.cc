@@ -27,6 +27,17 @@ limitations under the License.
 namespace tensorflow {
 
 namespace {
+// Construct the tensor for given type and buffer.
+Tensor MakeTensor(DataType dtype, const TensorShape& shape,
+                  se::DeviceMemoryBase buffer, Allocator* allocator) {
+  size_t expected_size = shape.num_elements() * DataTypeSize(dtype);
+  auto* tensor_buffer = new XlaTensorBuffer(buffer.opaque(), expected_size,
+                                            buffer.size(), allocator);
+  Tensor t(dtype, shape, tensor_buffer);
+  tensor_buffer->Unref();
+  return t;
+}
+
 AsyncIoRendezvous::DoneCallback make_recv_callback(
     OpKernelContext* ctx, AsyncOpKernel::DoneCallback done) {
   using namespace std::placeholders;
@@ -47,9 +58,8 @@ AsyncIoRendezvous::DoneCallback make_recv_callback(
           auto data_type =
               EncodePrimitiveTypeAsDataType(val.shape.element_type())
                   .ValueOrDie();
-          tensor =
-              XlaTensorBuffer::MakeTensor(data_type, tensor_shape, val.addr,
-                                          ctx->device()->GetAllocator({}));
+          tensor = MakeTensor(data_type, tensor_shape, val.addr,
+                              ctx->device()->GetAllocator({}));
         }
 
         ctx->SetStatus(s);
