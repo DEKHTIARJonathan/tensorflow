@@ -1749,6 +1749,14 @@ class HloAsyncOutSendInstruction : public HloInstruction {
 
   const Shape& async_out_send_shape() const { return async_out_send_shape_; }
   const string& rendezvous_key() const { return rendezvous_key_; }
+  HloInstructionProto ToProto() const override;
+
+ private:
+  std::vector<string> ExtraAttributesToStringImpl(
+      const HloPrintOptions& options) const override;
+  std::unique_ptr<HloInstruction> CloneWithNewOperandsImpl(
+      const Shape& shape, absl::Span<HloInstruction* const> new_operands,
+      HloCloneContext* context) const override;
 
   // Shape of AsyncOutSend.
   Shape async_out_send_shape_;
