@@ -946,6 +946,11 @@ cc_library(
     alwayslink = 1,
 )
 
+filegroup(
+    name = "tf32_hdr",
+    srcs = ["tf32_utils.h"],
+)
+
 tf_cc_tests(
     name = "low_level_library_tests",
     size = "small",
