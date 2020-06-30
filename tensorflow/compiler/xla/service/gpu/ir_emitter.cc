@@ -866,6 +866,10 @@ Status IrEmitter::HandleBatchNormGrad(HloInstruction*) {
       "to a cudnn CustomCall using CudnnBatchNormRewriter.");
 }
 
+Status IrEmitter::HandleAsyncOutSend(HloInstruction*) {
+  return Unimplemented("async-out-send");
+}
+
 StatusOr<llvm::Value*> IrEmitter::ComputeNestedElement(
     const HloComputation& computation,
     absl::Span<llvm::Value* const> parameter_elements) {
