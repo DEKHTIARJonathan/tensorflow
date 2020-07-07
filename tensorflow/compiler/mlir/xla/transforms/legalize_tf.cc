@@ -1085,7 +1085,8 @@ class ConvertFusedBatchNormV3Op
 
       auto bn_train_op = rewriter.create<xla_hlo::BatchNormTrainingOp>(
           op.getLoc(), result_type, bn_train_input, op.scale(), op.offset(),
-          op.epsilon(), feature_dim.getValue(), 0, false);
+          op.epsilon(), feature_dim.getValue(),
+	  llvm::APInt(64, 0), false);
       // HLO op outputs a tuple of tensors. Extract those results.
       auto bn_train_op_result = bn_train_op.getResult();
       Value y_out = rewriter.create<xla_hlo::GetTupleElementOp>(
