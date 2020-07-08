@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/cuda_libdevice_path.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/platform/error.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/regexp.h"
 #include "tensorflow/core/platform/subprocess.h"
@@ -234,6 +235,14 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
   int exit_status = ptxas_info_dumper.Communicate(
       /*stdin_input=*/nullptr, /*stdout_output=*/nullptr, &stderr_output);
   if (exit_status != 0) {
+    //  Example error message associated with this error code:
+    //      'ptxas fatal   : Value 'sm_80' is not defined for option 'gpu-name''
+    //      It happens when the ptxas installed is too old.
+    if (exit_status == 65280) {
+      return tensorflow::errors::NotFound(
+          ptxas_path,
+	  " ptxas too old. Falling back to the driver to compile");
+    }
     return port::InternalError(
         absl::StrFormat("ptxas exited with non-zero error code %d, output: %s",
                         exit_status, stderr_output));
