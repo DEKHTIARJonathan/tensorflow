@@ -93,11 +93,13 @@ static string GetSmName(std::pair<int, int> compute_capability) {
     }
   }
 
+  // If LLVM doesn't support the current SM, the end user can't do
+  // anything about this. So we shouldn't confuse him with a warning.
   if (sm_version != compute_capability_version) {
-    LOG(WARNING) << "Unknown compute capability (" << compute_capability.first
-                 << ", " << compute_capability.second << ") ."
-                 << "Defaulting to telling LLVM that we're compiling for sm_"
-                 << sm_version;
+    VLOG(2) << "Unknown compute capability (" << compute_capability.first
+	    << ", " << compute_capability.second << ") ."
+	    << "Defaulting to telling LLVM that we're compiling for sm_"
+	    << sm_version;
   }
   return absl::StrCat("sm_", sm_version);
 }
