@@ -245,9 +245,9 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
 		   << " NVIDIA driver for some compilation. Update your CUDA"
 		   << " version to get the best performance."
 		   << " The ptxas error was: " << stderr_output;
-      return tensorflow::errors::NotFound(
+      return tensorflow::errors::Unimplemented(
           ptxas_path,
-	  " ptxas too old. Falling back to the driver to compile");
+	  " ptxas too old. Falling back to the driver to compile.");
     }
 
     return port::InternalError(
