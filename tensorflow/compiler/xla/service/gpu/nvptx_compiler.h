@@ -121,6 +121,8 @@ class NVPTXCompiler : public GpuCompiler {
   TF_DISALLOW_COPY_AND_ASSIGN(NVPTXCompiler);
 };
 
+void WarnIfBadDriverJITVersion();
+
 }  // namespace gpu
 }  // namespace xla
 

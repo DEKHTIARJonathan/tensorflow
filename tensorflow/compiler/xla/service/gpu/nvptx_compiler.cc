@@ -180,24 +180,6 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
   return Status::OK();
 }
 
-namespace {
-absl::optional<bool> CanShareBufferHint(const HloInstruction* user,
-                                        const HloInstruction* operand,
-                                        const ShapeIndex& user_index) {
-  // Share the bias buffer with the parent instruction.
-  if (IsCublasGemm(*user)) {
-    if (user->operand_count() == 3 && user->operand(2) == operand) {
-      return true;
-    }
-  }
-  // The operand of cholesky can be shared with the first output.
-  if (user->opcode() == HloOpcode::kCustomCall &&
-      user->custom_call_target() == kCusolverCholeskyCallTarget) {
-    return user_index.size() == 1 && user_index[0] == 0;
-  }
-  return absl::nullopt;
-}
-
 // Prints a warning if the ptx->sass JIT in the driver has known bugs.
 //
 // Using such a driver only a problem if we fail to use ptxas to compile our ptx
@@ -236,6 +218,24 @@ void WarnIfBadDriverJITVersion() {
              "you can point XLA to ptxas 9.2.88 or newer.";
     }
   });
+}
+
+namespace {
+absl::optional<bool> CanShareBufferHint(const HloInstruction* user,
+                                        const HloInstruction* operand,
+                                        const ShapeIndex& user_index) {
+  // Share the bias buffer with the parent instruction.
+  if (IsCublasGemm(*user)) {
+    if (user->operand_count() == 3 && user->operand(2) == operand) {
+      return true;
+    }
+  }
+  // The operand of cholesky can be shared with the first output.
+  if (user->opcode() == HloOpcode::kCustomCall &&
+      user->custom_call_target() == kCusolverCholeskyCallTarget) {
+    return user_index.size() == 1 && user_index[0] == 0;
+  }
+  return absl::nullopt;
 }
 
 // Try to load ptx from files defined in the FLAGS. If successful, return true.
