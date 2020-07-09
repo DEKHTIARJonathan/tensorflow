@@ -537,6 +537,8 @@ StatusOr<std::unique_ptr<Executable>> MlirCompiler::RunBackend(
   std::vector<uint8> cubin;
   if (maybe_cubin.ok()) {
     cubin = std::move(maybe_cubin).ValueOrDie();
+  } else {
+    xla::gpu::WarnIfBadDriverJITVersion();
   }
 
   auto thunk_schedule = absl::make_unique<ThunkSchedule>(
