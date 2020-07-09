@@ -61,54 +61,6 @@ struct CudnnBatchNormBackwardParams {
   se::DeviceMemory<float> inv_stddev;
 };
 
-struct DnnBatchDescriptors {
-  se::dnn::BatchDescriptor input_desc;
-  se::dnn::BatchDescriptor scale_offset_desc;
-};
-
-DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
-                                             int64 feature_index) {
-  std::vector<int64> logical_to_physical =
-      LayoutUtil::MakeLogicalToPhysical(shape.layout());
-
-  auto physical_dim_size = [&](int64 physical_dim) {
-    return shape.dimensions(LayoutUtil::Major(shape.layout(), physical_dim));
-  };
-
-  // Batchnorm only cares about the location of the depth (aka "feature") dim.
-  // The other dims are all treated the same.  Thus we can use the kBatchDepthYX
-  // cudnn layout for any XLA shape+layout, even XLA shapes that don't have
-  // exactly 4 dimensions: We put everything that comes before the feature dim
-  // into "batch", and everything that comes after the feature dim into "Y".
-  int64 batch_size = 1;
-  int64 y_size = 1;
-  int64 physical_dim;
-  for (physical_dim = 0; physical_dim != logical_to_physical[feature_index];
-       ++physical_dim) {
-    CHECK_LT(physical_dim, shape.dimensions_size());
-    batch_size *= physical_dim_size(physical_dim);
-  }
-  ++physical_dim;  // Skip the feature dimension.
-  for (; physical_dim < shape.dimensions_size(); ++physical_dim) {
-    y_size *= physical_dim_size(physical_dim);
-  }
-
-  DnnBatchDescriptors batch_descs;
-  batch_descs.input_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
-      .set_count(batch_size)
-      .set_feature_map_count(shape.dimensions(feature_index))
-      .set_height(y_size)
-      .set_width(1);
-
-  batch_descs.scale_offset_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
-      .set_feature_map_count(batch_descs.input_desc.feature_map_count())
-      .set_height(1)
-      .set_width(1)
-      .set_count(1);
-
-  return batch_descs;
-}
-
 void AssignCommonParams(const HloInstruction* batchnorm,
                         CudnnBatchNormParamsCommon* params,
                         const se::DeviceMemoryBase& operand,
@@ -161,9 +113,20 @@ void RunCudnnBatchNormForwardInferenceImpl(
 
 template <typename ElemType>
 void RunCudnnBatchNormForwardTrainingImpl(
-    CudnnBatchNormForwardTrainingParams* params, se::Stream* stream) {
+    CudnnBatchNormForwardTrainingParams* params,
+    se::ScratchAllocator* reserve_space_allocator,
+    se::ScratchAllocator* workspace_allocator, se::Stream* stream) {
   se::DeviceMemory<float> null_device_ptr(nullptr);
   auto output_data = se::DeviceMemory<ElemType>(params->output_data);
+  auto allocator =
+      [&](se::ScratchAllocator* space_allocator) -> se::ScratchAllocator* {
+    if (dynamic_cast<ScratchBufAllocator*>(space_allocator)->IsBufferNull()) {
+      return nullptr;
+    }
+    return space_allocator;
+  };
+  reserve_space_allocator = allocator(reserve_space_allocator);
+  workspace_allocator = allocator(workspace_allocator);
   stream->ThenBatchNormalizationForward(
       se::DeviceMemory<ElemType>(params->common.operand),
       params->common.scale,                    //
@@ -184,14 +147,19 @@ void RunCudnnBatchNormForwardTrainingImpl(
       /*saved_mean=*/&params->output_mean,           //
       /*saved_inv_var=*/&params->output_inv_stddev,  //
       /*is_training=*/true,                          //
-      /*reserve_space_allocator=*/nullptr,           //
-      /*workspace_allocator=*/nullptr);
+      reserve_space_allocator,                       //
+      workspace_allocator);
 }
 
 template <typename ElemType>
 void RunCudnnBatchNormBackwardImpl(CudnnBatchNormBackwardParams* params,
+                                   se::DeviceMemory<uint8> reserve_space,
+                                   se::ScratchAllocator* workspace_allocator,
                                    se::Stream* stream) {
   se::DeviceMemory<float> null_device_ptr(nullptr);
+  if (dynamic_cast<ScratchBufAllocator*>(workspace_allocator)->IsBufferNull()) {
+    workspace_allocator = nullptr;
+  }
   auto output_grad_data = se::DeviceMemory<ElemType>(params->output_grad_data);
   stream->ThenBatchNormalizationBackward(
       se::DeviceMemory<ElemType>(params->grad_output),     //
@@ -205,8 +173,8 @@ void RunCudnnBatchNormBackwardImpl(CudnnBatchNormBackwardParams* params,
       &output_grad_data,                                   //
       &params->output_grad_scale,                          //
       &params->output_grad_offset,                         //
-      /*reserve_space_allocator=*/nullptr,                 //
-      /*workspace_allocator=*/nullptr);
+      /*reserve_space_allocator=*/&reserve_space,          //
+      /*workspace_allocator=*/workspace_allocator);
 }
 
 }  // namespace
@@ -245,9 +213,12 @@ Status RunCudnnBatchNormForwardTraining(
     const HloInstruction* batchnorm, se::DeviceMemoryBase operand,
     se::DeviceMemoryBase output_data, se::DeviceMemory<float> output_mean,
     se::DeviceMemory<float> output_inv_stddev, se::DeviceMemory<float> scale,
-    se::DeviceMemory<float> offset, float epsilon, int64 feature_index,
+    se::DeviceMemory<float> offset, se::DeviceMemoryBase reserve_space,
+    se::DeviceMemoryBase workspace, float epsilon, int64 feature_index,
     se::Stream* stream) {
   CudnnBatchNormForwardTrainingParams forward_params;
+  ScratchBufAllocator reserve_space_scratch_allocator(reserve_space);
+  ScratchBufAllocator workspace_scratch_allocator(workspace);
   AssignCommonParams(batchnorm, &forward_params.common, operand, scale, epsilon,
                      feature_index);
   forward_params.offset = offset;
@@ -259,11 +230,14 @@ Status RunCudnnBatchNormForwardTraining(
       batchnorm->shape().tuple_shapes(0).element_type();
   switch (output_primitive_type) {
     case F16:
-      RunCudnnBatchNormForwardTrainingImpl<Eigen::half>(&forward_params,
-                                                        stream);
+      RunCudnnBatchNormForwardTrainingImpl<Eigen::half>(
+          &forward_params, &reserve_space_scratch_allocator,
+          &workspace_scratch_allocator, stream);
       break;
     case F32:
-      RunCudnnBatchNormForwardTrainingImpl<float>(&forward_params, stream);
+      RunCudnnBatchNormForwardTrainingImpl<float>(
+          &forward_params, &reserve_space_scratch_allocator,
+          &workspace_scratch_allocator, stream);
       break;
     default:
       return Unimplemented("Primitive type not implemented for \"%s\" ",
@@ -278,8 +252,10 @@ Status RunCudnnBatchNormBackward(
     se::DeviceMemory<float> output_grad_scale,
     se::DeviceMemory<float> output_grad_offset, se::DeviceMemory<float> scale,
     se::DeviceMemory<float> mean, se::DeviceMemory<float> inv_stddev,
+    se::DeviceMemory<uint8> reserve_space, se::DeviceMemoryBase workspace,
     float epsilon, int64 feature_index, se::Stream* stream) {
   CudnnBatchNormBackwardParams backward_params;
+  ScratchBufAllocator workspace_scratch_allocator(workspace);
   AssignCommonParams(batchnorm, &backward_params.common, operand, scale,
                      epsilon, feature_index);
   backward_params.output_grad_data = output_grad_data;
@@ -293,10 +269,14 @@ Status RunCudnnBatchNormBackward(
       batchnorm->shape().tuple_shapes(0).element_type();
   switch (output_primitive_type) {
     case F16:
-      RunCudnnBatchNormBackwardImpl<Eigen::half>(&backward_params, stream);
+      RunCudnnBatchNormBackwardImpl<Eigen::half>(
+          &backward_params, reserve_space, &workspace_scratch_allocator,
+          stream);
       break;
     case F32:
-      RunCudnnBatchNormBackwardImpl<float>(&backward_params, stream);
+      RunCudnnBatchNormBackwardImpl<float>(&backward_params, reserve_space,
+                                           &workspace_scratch_allocator,
+                                           stream);
       break;
     default:
       return Unimplemented("Primitive type not implemented for \"%s\" ",
