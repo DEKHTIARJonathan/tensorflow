@@ -6414,7 +6414,6 @@ TEST_P(OpConverterTest2, ConvertSquaredDifference) {
 
 #if IS_TRT_VERSION_GE(6, 0, 0, 0)
 // TODO: @mconley @jdekhtiar - Reactivate when fixed
-#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 template <typename OpType>
 NodeDef MakeResizeNodeDef(std::string name, DataType dtype,
                           bool align_corners) {
@@ -6491,6 +6490,8 @@ void TestConvertResize(OpConverterTest* test) {
     TF_EXPECT_OK(test->BuildAndRun(input_data, &output_data));
 
     if (node_def.op() == "ResizeBilinear") {
+      //NOTE: align_corners=False is not supported by TRT as of 7.1,
+      //so those ops will be execited in native TF.
       ExpectArrayAlmostEqual(params[i].expected_bilinear_output_values,
                              GetSpanForData<CType>(output_data[0]),
                              CType(1e-3));
@@ -6532,7 +6533,6 @@ TEST_F(OpConverterTest, ConvertResize) {
   TestConvertResize<ops::ResizeNearestNeighbor, DT_FLOAT>(this);
   TestConvertResize<ops::ResizeNearestNeighbor, DT_HALF>(this);
 }
-#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 #endif  // IS_TRT_VERSION_GE(6, 0, 0, 0)
 
 NodeDef MakePadNodeDef(std::string name, DataType dtype) {
