@@ -672,6 +672,16 @@ void AddSegmentForNode(const grappler::GraphProperties* graph_properties,
                 use_implicit_batch));
 }
 
+bool UnsupportedResize(SimpleNode* node) {
+  if (node->tf_node()->def().op() != "ResizeBilinear") { return false; }
+  for (const auto& attr : node->tf_node()->def().attr()) {
+    if (attr.first == "align_corners") {
+            return !attr.second.b();
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 Status SegmentGraph(const Graph* tf_graph,
@@ -743,6 +753,10 @@ Status SegmentGraph(const Graph* tf_graph,
                OperationHasDynamicNonBatchDimension(graph_properties,
                                                     node->tf_node())) {
       exclude_node("dynamic non-batch dimensions not allowed");
+    } else if (UnsupportedResize(node)) {
+      //NOTE: align_corners=False is not supported by TRT as of 7.1,
+      //so the segmenter will not include those ops in the TRTEngine
+      exclude_node("align_corners=False is not supported by TRT.");
     } else {
       const Status status = candidate_fn(node->tf_node());
       if (!status.ok()) {
