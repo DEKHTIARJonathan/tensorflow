@@ -473,6 +473,8 @@ Status XlaCompilationCache::CompileImpl(
               << " max_compile_time=" << it->second.max_compile_time_s;
       it->second.is_megamorphic = true;
     }
+
+    is_megamorphic = it->second.is_megamorphic;
   }
 
   // Acquire the cache entry lock and compile, if necessary.
