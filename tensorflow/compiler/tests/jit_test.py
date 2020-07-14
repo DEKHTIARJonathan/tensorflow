@@ -18,6 +18,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import unittest
+
 import os
 
 import numpy as np
@@ -345,10 +347,12 @@ class XlaCompilationTest(test.TestCase):
         _, y = control_flow_ops.while_loop(c, b, (constant_op.constant(0), x))
 
       run_metadata = config_pb2.RunMetadata()
-      result = session.run(y, {x: np.float32(2)},
-                           run_metadata=run_metadata,
-                           options=config_pb2.RunOptions(
-                               trace_level=config_pb2.RunOptions.FULL_TRACE))
+      result = test_utils.RunWithWarmup(
+          session,
+          y, {x: np.float32(2)},
+          run_metadata=run_metadata,
+          options=config_pb2.RunOptions(
+              trace_level=config_pb2.RunOptions.FULL_TRACE))
       self.assert_(MetadataHasXlaRunOp(run_metadata))
       self.assertAllClose(result, np.float32(95), rtol=1e-1)
 
@@ -519,6 +523,7 @@ class ElementWiseFusionTest(test.TestCase):
 
 class LazyCompilationTest(test.TestCase):
 
+  @unittest.skip("test too dependant on XLA compilation protocol")
   def testLazyCompilation(self):
 
     @function.Defun(compiled=True)
