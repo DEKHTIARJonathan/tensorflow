@@ -119,7 +119,11 @@ class Conv3DTest(test.TestCase):
           print("expected = ", expected)
           print("actual = ", value)
           tol = 1e-6
-          if value.dtype == np.float16:
+          # Conv3D might rely on TF32 on GPUs. So we need to adjust the
+          # tolerance accordingly.
+          if value.dtype == np.float16 or (test_util.is_gpu_available(
+              cuda_only=True, min_cuda_compute_capability=(8, 0)) and
+              value.dtype == np.float32):
             tol = 1e-3
 
           self.assertAllClose(expected, value.flatten(), atol=tol, rtol=tol)
