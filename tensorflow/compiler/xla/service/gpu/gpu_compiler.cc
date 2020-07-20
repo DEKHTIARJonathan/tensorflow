@@ -37,7 +37,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/call_inliner.h"
 #include "tensorflow/compiler/xla/service/conditional_simplifier.h"
 #include "tensorflow/compiler/xla/service/convolution_4d_expander.h"
-#include "tensorflow/compiler/xla/service/convolution_group_converter.h"
 #include "tensorflow/compiler/xla/service/depthwise_convolution_converter.h"
 #include "tensorflow/compiler/xla/service/dot_decomposer.h"
 #include "tensorflow/compiler/xla/service/dump.h"
@@ -155,18 +154,9 @@ Status GpuCompiler::OptimizeHloModule(
 
     auto cost_model = [](HloInstruction*) {
       // We need a cost model for GPUs. Currently, do nothing.
-      return false;
+      return true;
     };
     pipeline.AddPass<DepthwiseConvolutionConverter>(cost_model);
-
-    // We use the ConvolutionGroupConverter to convert backprops of filter
-    // grouped convolutions into non-grouped equivalents.
-    auto batch_group_cost_model = [](HloInstruction*) { return false; };
-
-    pipeline.AddPass<ConvolutionGroupConverter>(
-        batch_group_cost_model,
-        /*convert_batch_groups_only=*/true,
-        /*filter_expansion=*/true);
 
     // Expand the sort op to support stable sorting if required.
     pipeline.AddPass<StableSortExpander>();
