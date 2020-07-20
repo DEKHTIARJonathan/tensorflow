@@ -48,7 +48,18 @@ class EinsumOpTest(test.TestCase):
       inputs.append(arr)
     input_tensors = [constant_op.constant(x, shape=x.shape) for x in inputs]
     a = np.einsum(s, *inputs)
-    b = self.evaluate(gen_linalg_ops.einsum(input_tensors, s))
+
+    # Einsum relies on batched matmul which might use TF32 on GPUs. Force the
+    # tests on CPU until we have per-op TF32 controls.
+    use_cpu = (test_util.is_gpu_available(cuda_only=True,
+               min_cuda_compute_capability=(8, 0)) and dtype == np.float32)
+    if use_cpu:
+      with ops.device('/cpu:0'):
+        res = gen_linalg_ops.einsum(input_tensors, s)
+    else:
+      res = gen_linalg_ops.einsum(input_tensors, s)
+
+    b = self.evaluate(res)
     self.assertAllClose(a, b, atol=1e-4, rtol=1e-4)
 
   def testUnary(self):
