@@ -1093,7 +1093,7 @@ PYBIND11_MODULE(_pywrap_tfe, m) {
     PyCapsule_SetDestructor(pycapsule.ptr(), nullptr);
     
     PyObject* pyhandle = EagerTensorFromHandle(thandle);
-    return tensorflow::PyoOrThrow(pyhandle);
+    return tensorflow::pyo_or_throw(pyhandle);
   });
 
   // C API Enum
