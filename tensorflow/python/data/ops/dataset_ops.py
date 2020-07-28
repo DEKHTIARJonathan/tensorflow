@@ -67,6 +67,7 @@ from tensorflow.python.ops import gen_io_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import script_ops
 from tensorflow.python.ops import string_ops
+from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training.tracking import base as tracking_base
 from tensorflow.python.training.tracking import tracking
 from tensorflow.python.util import deprecation
@@ -402,6 +403,47 @@ class DatasetV2(collections_abc.Iterable, tracking_base.Trackable,
           dataset, options.experimental_stats.aggregator,
           options.experimental_stats.prefix,
           options.experimental_stats.counter_prefix)
+
+    # (5) Apply automatic GPU prefetching if possible
+    from tensorflow.python.distribute import distribution_strategy_context
+    if not distribution_strategy_context.has_strategy():
+      if options.experimental_optimization.prefetch_to_device is not None:
+        from tensorflow.python.data.experimental.ops import prefetching_ops
+        prefetch_device = options.experimental_optimization.prefetch_to_device
+
+        def prefetch_to_device(target_device, buffer_size=None):
+          """A transformation that copies dataset elements to the given `target_device`.
+
+          Args:
+            target_device: The name of a device to which elements will be copied.
+            buffer_size: (Optional.) The number of elements to buffer on `device`.
+              Defaults to an automatically chosen value.
+
+          Returns:
+            A `Dataset` transformation function, which can be passed to
+            `tf.data.Dataset.apply`.
+          """
+
+          def _apply_fn(dataset):
+            source_device = dataset._variant_tensor.device
+            if source_device == "":
+              source_device = "/cpu:0"
+            return prefetching_ops._CopyToDeviceDataset(
+              dataset,
+              target_device=target_device,
+              source_device=source_device
+            ).prefetch(buffer_size)
+
+          return _apply_fn
+
+        dataset = dataset.apply(
+          prefetch_to_device(prefetch_device, buffer_size=1))
+    else:
+      logging.warning("GPU prefetching has been deactivated in your "
+                      "`tf.data` pipeline. It is not compatible with "
+                      "`tf.distribute` API. Please transition to `horovod` for "
+                      "maximum performance.")
+
     return dataset
 
   def __iter__(self):
@@ -2247,7 +2289,8 @@ class DatasetV1(DatasetV2):
 
   def _make_one_shot_iterator(self):  # pylint: disable=missing-docstring
     if context.executing_eagerly():
-      return iterator_ops.OwnedIterator(self)
+      with ops.device(self._variant_tensor.device):
+        return iterator_ops.OwnedIterator(self)
 
     _ensure_same_dataset_graph(self)
     # Now that we create datasets at python object creation time, the capture
@@ -2273,7 +2316,24 @@ class DatasetV1(DatasetV2):
         core_random_seed.set_random_seed(
             (graph_level_seed + 87654321 * op_level_seed) % (2 ** 63 - 1))
 
-      dataset = self._apply_options()
+      prefetch_to_device = self.options().experimental_optimization.prefetch_to_device
+      if prefetch_to_device is not None:
+        logging.warning("GPU prefetching has been deactivated in your "
+                        "`tf.data` pipeline. It is not compatible with "
+                        "`tf.data.make_one_shot_iterator`. Please transition "
+                        "to `tf.data.make_initializable_iterator` for maximum "
+                        "performance.")
+        try:
+          options = Options()
+          options.experimental_optimization.prefetch_to_device = None
+          dataset = self.with_options(options)
+        except ValueError:
+          self._dataset._options.experimental_optimization.prefetch_to_device = None
+          dataset = self
+      else:
+        dataset = self
+
+      dataset = dataset._apply_options()
       return dataset._variant_tensor  # pylint: disable=protected-access
 
     try:
@@ -2354,7 +2414,9 @@ class DatasetV1(DatasetV2):
     dataset = self._apply_options()
     if shared_name is None:
       shared_name = ""
-    iterator_resource = gen_dataset_ops.iterator_v2(
+
+    with ops.device(self._variant_tensor.device):
+      iterator_resource = gen_dataset_ops.iterator_v2(
         container="", shared_name=shared_name, **self._flat_structure)
     with ops.colocate_with(iterator_resource):
       initializer = gen_dataset_ops.make_iterator(
@@ -2915,9 +2977,11 @@ class Options(options_lib.OptionsBase):
         result.enabled.append("latency_all_edges")
       elif self.experimental_stats.latency_all_edges is False:  # pylint: disable=g-bool-id-comparison
         result.disabled.append("latency_all_edges")
-    if self.experimental_slack is True:  # pylint: disable=g-bool-id-comparison
-      result.enabled.append("slack")
-    elif self.experimental_slack is False:  # pylint: disable=g-bool-id-comparison
+    if (self.experimental_slack and
+        self.experimental_optimization.prefetch_to_device is None):
+      result.append("slack")
+    elif (self.experimental_slack is False or 
+          self.experimental_optimization.prefetch_to_device is not None):  # pylint: disable=g-bool-id-comparison
       result.disabled.append("slack")
 
     graph_rewrites = options_lib.graph_rewrites()
