@@ -23,6 +23,8 @@ limitations under the License.
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/tensor.pb.h"
+#include "tensorflow/core/graph/default_device.h"
+#include "tensorflow/core/grappler/utils.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/monitoring/counter.h"
 #include "tensorflow/core/lib/monitoring/sampler.h"
@@ -256,8 +258,26 @@ Status LoadSavedModelInternal(const SessionOptions& session_options,
                                                     &bundle->meta_graph_def));
   TF_RETURN_IF_ERROR(
       ReadSavedModelDebugInfoIfPresent(export_dir, &bundle->debug_info));
+  // If allocator starts with a '/' then it is being used to
+  // communicate the CPU/GPU that the graph runs on.
+  SessionOptions lsession_options = session_options;
+  const std::string& alloc_type =
+    lsession_options.config.gpu_options().allocator_type();
+  if (!alloc_type.empty() && (alloc_type[0] == '/')) {
+    // Clear the device field from the graphdef so that the default device
+    // setting below will control which GPU the graph will run on.
+    for (tensorflow::NodeDef& node :
+      *bundle->meta_graph_def.mutable_graph_def()->mutable_node()) {
+      if (!tensorflow::grappler::NodeIsOnCpu(&node)) {
+        node.clear_device();
+      }
+    }
+    graph::SetDefaultDevice(alloc_type, bundle->meta_graph_def.mutable_graph_def());
+    lsession_options.config.mutable_gpu_options()->clear_allocator_type();
+  }
+
   TF_RETURN_IF_ERROR(LoadMetaGraphIntoSession(
-      bundle->meta_graph_def, session_options, &bundle->session));
+      bundle->meta_graph_def, lsession_options, &bundle->session));
 
   std::vector<AssetFileDef> asset_file_defs;
   TF_RETURN_IF_ERROR(
