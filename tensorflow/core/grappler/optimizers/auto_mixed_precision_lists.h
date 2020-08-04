@@ -124,11 +124,6 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "GRUBlockCellGrad",
         "LSTMBlockCell",
         "LSTMBlockCellGrad",
-        // TODO(benbarsdell): Enable these when fast and safe fp16 kernels are
-        // available for depthwise convolutions.
-        // "DepthwiseConv2dNative",
-        // "DepthwiseConv2dNativeBackpropFilter",
-        // "DepthwiseConv2dNativeBackpropInput",
         "MatMul",
     };
     if (cuda_version_ >= 9010) {
@@ -143,6 +138,11 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
       list.insert("Conv3DBackpropFilterV2");
       list.insert("Conv3DBackpropInput");
       list.insert("Conv3DBackpropInputV2");
+    }
+    if (cudnn_version_ >= 8000) {
+      list.insert("DepthwiseConv2dNative");
+      list.insert("DepthwiseConv2dNativeBackpropFilter");
+      list.insert("DepthwiseConv2dNativeBackpropInput");
     }
     UpdateList("WHITELIST", &list);
     return list;
