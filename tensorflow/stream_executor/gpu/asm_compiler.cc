@@ -220,7 +220,8 @@ port::StatusOr<std::vector<uint8>> CompileGpuAsm(int cc_major, int cc_minor,
       ptxas_args.push_back(string(val));
     }
   }
-
+  ptxas_args.insert(ptxas_args.end(), options.extra_flags.begin(),
+		    options.extra_flags.end());
   if (VLOG_IS_ON(3)) {
     VLOG(3) << absl::StrJoin(ptxas_args, " ");
   }
