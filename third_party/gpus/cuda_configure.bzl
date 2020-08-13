@@ -512,14 +512,14 @@ def _find_libs(repository_ctx, check_cuda_libs_script, cuda_config):
             "cudart",
             cpu_value,
             cuda_config.config["cuda_library_dir"],
-            cuda_config.cuda_version,
+            cuda_config.cudart_version,
             static = False,
         ),
         "cudart_static": _check_cuda_lib_params(
             "cudart_static",
             cpu_value,
             cuda_config.config["cuda_library_dir"],
-            cuda_config.cuda_version,
+            cuda_config.cudart_version,
             static = True,
         ),
         "cublas": _check_cuda_lib_params(
@@ -629,6 +629,7 @@ def _get_cuda_config(repository_ctx, find_cuda_config_script):
           cuda_toolkit_path: The CUDA toolkit installation directory.
           cudnn_install_basedir: The cuDNN installation directory.
           cuda_version: The version of CUDA on the system.
+          cudart_version: The CUDA runtime version on the system.
           cudnn_version: The version of cuDNN on the system.
           compute_capabilities: A list of the system's CUDA compute capabilities.
           cpu_value: The name of the host operating system.
@@ -646,6 +647,10 @@ def _get_cuda_config(repository_ctx, find_cuda_config_script):
     cudnn_version = ("64_%s" if is_windows else "%s") % config["cudnn_version"]
 
     if int(cuda_major) >= 11:
+        if int(cuda_major) == 11:
+          cudart_version = "64_110" if is_windows else "11.0"
+        else:
+          cudart_version = ("64_%s" if is_windows else "%s") % cuda_major
         cublas_version = ("64_%s" if is_windows else "%s") % config["cublas_version"].split(".")[0]
         cusolver_version = ("64_%s" if is_windows else "%s") % config["cusolver_version"].split(".")[0]
         curand_version = ("64_%s" if is_windows else "%s") % config["curand_version"].split(".")[0]
@@ -655,12 +660,14 @@ def _get_cuda_config(repository_ctx, find_cuda_config_script):
         # cuda_lib_version is for libraries like cuBLAS, cuFFT, cuSOLVER, etc.
         # It changed from 'x.y' to just 'x' in CUDA 10.1.
         cuda_lib_version = ("64_%s" if is_windows else "%s") % cuda_major
+        cudart_version = cuda_version
         cublas_version = cuda_lib_version
         cusolver_version = cuda_lib_version
         curand_version = cuda_lib_version
         cufft_version = cuda_lib_version
         cusparse_version = cuda_lib_version
     else:
+        cudart_version = cuda_version
         cublas_version = cuda_version
         cusolver_version = cuda_version
         curand_version = cuda_version
@@ -670,6 +677,7 @@ def _get_cuda_config(repository_ctx, find_cuda_config_script):
     return struct(
         cuda_toolkit_path = toolkit_path,
         cuda_version = cuda_version,
+        cudart_version = cudart_version,
         cublas_version = cublas_version,
         cusolver_version = cusolver_version,
         curand_version = curand_version,
