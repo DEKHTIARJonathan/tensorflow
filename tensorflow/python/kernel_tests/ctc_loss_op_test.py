@@ -993,7 +993,7 @@ class CTCLossTestV3(test.TestCase, parameterized.TestCase):
     labels *= label_mask
     logit_length = [num_frames] * batch_size
 
-    if run_tf_func:
+    if run_tf_func and not test_util.is_xla_enabled():
       ctc_loss = def_function.function(_ctc_loss_v3)
     else:
       ctc_loss = _ctc_loss_v3
