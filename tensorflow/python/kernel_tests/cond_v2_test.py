@@ -956,7 +956,8 @@ class CondV2Test(test.TestCase):
 
   @test_util.run_deprecated_v1
   def testLoweringDisabledInXLA(self):
-    with self.session(graph=ops.Graph()) as sess:
+    with self.session(graph=ops.Graph(),
+                      use_gpu=test_util.is_xla_enabled()) as sess:
       # Build the cond_v2 in an XLA context
       xla_context = control_flow_ops.XLAControlFlowContext()
       xla_context.Enter()

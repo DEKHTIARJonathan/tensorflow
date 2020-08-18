@@ -1006,7 +1006,7 @@ class CTCLossTestV3(keras_parameterized.TestCase):
 
         return loss, grad
 
-    if run_tf_func:
+    if run_tf_func and not test_util.is_xla_enabled():
       ctc_loss_cpu = def_function.function(ctc_loss_cpu)
       ctc_loss_gpu = def_function.function(ctc_loss_gpu)
 
