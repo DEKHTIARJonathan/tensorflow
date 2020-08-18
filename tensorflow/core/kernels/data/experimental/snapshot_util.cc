@@ -33,6 +33,11 @@ namespace tensorflow {
 namespace data {
 namespace experimental {
 
+/* static */ constexpr const int64
+    SnapshotReader::kSnappyReaderInputBufferSizeBytes;
+/* static */ constexpr const int64
+    SnapshotReader::kSnappyReaderOutputBufferSizeBytes;
+
 SnapshotWriter::SnapshotWriter(WritableFile* dest,
                                const string& compression_type, int version,
                                const DataTypeVector& dtypes)
