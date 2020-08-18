@@ -180,7 +180,10 @@ class BinaryOpTest(test.TestCase):
       iny = ops.convert_to_tensor(y)
       out = tf_func(inx, iny)
       tf_gpu = self.evaluate(out)
-    self.assertAllClose(np_ans, tf_gpu)
+    if np_func == np.true_divide and test_util.is_xla_enabled():
+      self.assertAllClose(np_ans, tf_gpu, 1e-3, 1e-6)
+    else:
+      self.assertAllClose(np_ans, tf_gpu)
     self.assertShapeEqual(np_ans, out)
     # TODO(zhifengc/ke): make gradient checker work on GPU.
 
