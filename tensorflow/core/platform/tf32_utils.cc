@@ -20,7 +20,7 @@ limitations under the License.
 namespace tensorflow {
 
 // Whether TensorFloat-32 should be used where supported.
-// TODO(nluehr): Maybe enable by default after TF32 Ampere testing.
+// TODO(reedwm): Change word "allow" to "enable" in all TensorFloat-32 functions
 static std::atomic<bool> tf32_allowed{true};
 
 void allow_tf32_execution(bool allowed) { tf32_allowed = allowed; }
