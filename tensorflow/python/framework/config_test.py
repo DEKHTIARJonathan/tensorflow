@@ -159,7 +159,6 @@ class ConfigTest(test.TestCase, parameterized.TestCase):
     else:
       self.assertFalse(config.get_soft_device_placement())
 
-    @def_function.function
     def mod():
       with ops.device('/device:GPU:0'):
         a = constant_op.constant(1.0)
@@ -172,8 +171,10 @@ class ConfigTest(test.TestCase, parameterized.TestCase):
         config.get_soft_device_placement(),
         context.context().soft_device_placement)
 
-    # Since soft placement is enabled, the mod operation should work with CPU
+    # Since soft placement is enabled, the mod operation should fallback to CPU
+    # with pure eager execution as well as functions
     mod()
+    def_function.function(mod)()
 
     config.set_soft_device_placement(False)
     self.assertEqual(config.get_soft_device_placement(), False)
@@ -182,8 +183,11 @@ class ConfigTest(test.TestCase, parameterized.TestCase):
         context.context().soft_device_placement)
 
     # Since soft placement is disabled, the mod operation should fail on GPU
+    # with pure eager execution as well as functions
     with self.assertRaises(errors.InvalidArgumentError):
       mod()
+    with self.assertRaises(errors.InvalidArgumentError):
+      def_function.function(mod)()
 
   @reset_eager
   def testLogDevicePlacement(self):
@@ -203,12 +207,8 @@ class ConfigTest(test.TestCase, parameterized.TestCase):
 
     context.ensure_initialized()
 
-    with self.assertRaises(RuntimeError):
-      context.set_log_device_placement(True)
-
-    # If the setting the device placement is a no-op, do not throw a runtime
-    # exception.
-    context.set_log_device_placement(False)
+    # Changing the device placement should not throw an exception
+    context.set_log_device_placement(True)
 
   @reset_eager
   def testEnableMlirBridge(self):
@@ -222,6 +222,22 @@ class ConfigTest(test.TestCase, parameterized.TestCase):
     # Tests disabling mlir bridge.
     config.disable_mlir_bridge()
     self.assertFalse(context.context().config.experimental.enable_mlir_bridge)
+
+  @reset_eager
+  def testEnableMlirGraphOptimization(self):
+    # Default value of enable_mlir_graph_optimization is false.
+    self.assertFalse(
+        context.context().config.experimental.enable_mlir_graph_optimization)
+
+    # Tests enabling mlir graph optimization.
+    config.enable_mlir_graph_optimization()
+    self.assertTrue(
+        context.context().config.experimental.enable_mlir_graph_optimization)
+
+    # Tests disabling mlir graph optimization.
+    config.disable_mlir_graph_optimization()
+    self.assertFalse(
+        context.context().config.experimental.enable_mlir_graph_optimization)
 
   @test_util.run_gpu_only
   @reset_eager
@@ -466,6 +482,49 @@ class DeviceTest(test.TestCase):
         a = constant_op.constant(1.0)
         self.evaluate(a)
 
+  @reset_eager
+  def testDeviceDetails(self):
+    (cpu,) = config.list_physical_devices('CPU')
+    details = config.get_device_details(cpu)
+    self.assertEqual(details, {})
+
+    if not test_util.is_gpu_available():
+      return
+
+    gpus = config.list_physical_devices('GPU')
+    details = config.get_device_details(gpus[0])
+    self.assertIsInstance(details['device_name'], str)
+    self.assertNotEmpty(details['device_name'])
+    if test.is_built_with_rocm():
+      # AMD GPUs do not have a compute capability
+      self.assertNotIn('compute_capability', details)
+    else:
+      cc = details['compute_capability']
+      self.assertIsInstance(cc, tuple)
+      major, minor = cc
+      self.assertGreater(major, 0)
+      self.assertGreaterEqual(minor, 0)
+
+    # Test GPU returned from get_visible_devices
+    if len(gpus) > 2:
+      config.set_visible_devices(gpus[1], 'GPU')
+      (visible_gpu,) = config.get_visible_devices('GPU')
+      details = config.get_device_details(visible_gpu)
+      self.assertIsInstance(details['device_name'], str)
+
+  @reset_eager
+  def testDeviceDetailsErrors(self):
+    logical_devices = config.list_logical_devices()
+    with self.assertRaisesRegexp(ValueError,
+                                 'must be a tf.config.PhysicalDevice'):
+      config.get_device_details(logical_devices[0])
+
+    phys_dev = context.PhysicalDevice('/physical_device:CPU:100', 'CPU')
+    with self.assertRaisesRegexp(
+        ValueError, 'The PhysicalDevice must be one obtained from '
+        'calling `tf.config.list_physical_devices`'):
+      config.get_device_details(phys_dev)
+
   @test_util.run_gpu_only
   @reset_eager
   def testVirtualGpu(self):
@@ -695,6 +754,44 @@ class DeviceTest(test.TestCase):
                      new_rewrite_options.scoped_allocator_optimization)
     self.assertEqual(['CollectiveReduce'],
                      new_rewrite_options.scoped_allocator_opts.enable_op)
+
+
+class TensorFloat32Test(test.TestCase):
+
+  def setUp(self):
+    if not test_util.is_gpu_available(cuda_only=True,
+                                      min_cuda_compute_capability=(8, 0)):
+      self.skipTest('TensorFloat-32 requires an NVIDIA GPU with compute '
+                    'capability of at least 8.0')
+
+  def tearDown(self):
+    config.allow_tensor_float_32_execution(False)
+
+  def test_tf32_enabled(self):
+    self.assertFalse(config.tensor_float_32_execution_allowed())
+    config.allow_tensor_float_32_execution(True)
+    self.assertTrue(config.tensor_float_32_execution_allowed())
+
+    x = array_ops.fill((8, 8), 1 + 2 ** -20)
+    y = array_ops.ones((8, 8))
+    out = math_ops.matmul(x, y)
+    # In tf32, each element of x is rounded to 1, so the output will be 8s.
+    expected = array_ops.fill((8, 8), 8)
+    self.assertAllEqual(out, expected)
+
+  def test_tf32_disabled(self):
+    x = array_ops.fill((8, 8), 1 + 2 ** -20)
+    y = array_ops.ones((8, 8))
+    out = math_ops.matmul(x, y)
+    expected = array_ops.fill((8, 8), 8 * (1 + 2 ** -20))
+    self.assertAllEqual(out, expected)
+
+    # Test disabling tf32 after enabling it works correctly
+    config.allow_tensor_float_32_execution(True)
+    config.allow_tensor_float_32_execution(False)
+    self.assertFalse(config.tensor_float_32_execution_allowed())
+    out = math_ops.matmul(x, y)
+    self.assertAllEqual(out, expected)
 
 
 if __name__ == '__main__':

@@ -12,8 +12,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "third_party/gpus/cuda/include/cusparse.h"
 #include "third_party/gpus/cuda/include/cuda.h"
+#include "third_party/gpus/cuda/include/cusparse.h"
 #include "tensorflow/stream_executor/lib/env.h"
 #include "tensorflow/stream_executor/platform/dso_loader.h"
 
@@ -51,16 +51,14 @@ cusparseStatus_t GetSymbolNotFoundError() {
 }
 }  // namespace
 
-#if CUDA_VERSION < 9020
+#if CUDA_VERSION < 10000
 #include "tensorflow/stream_executor/cuda/cusparse_9_0.inc"
 #elif CUDA_VERSION < 10010
 #include "tensorflow/stream_executor/cuda/cusparse_10_0.inc"
-#elif CUDA_VERSION == 10010
+#elif CUDA_VERSION < 10020
 #include "tensorflow/stream_executor/cuda/cusparse_10_1.inc"
-#elif CUDA_VERSION == 10020
+#elif CUDA_VERSION < 11000
 #include "tensorflow/stream_executor/cuda/cusparse_10_2.inc"
-#elif CUSPARSE_VER_MAJOR == 11
-#include "tensorflow/stream_executor/cuda/cusparse_11_0.inc"
 #else
-#error "We have no wrapper for this version."
+#include "tensorflow/stream_executor/cuda/cusparse_11_0.inc"
 #endif

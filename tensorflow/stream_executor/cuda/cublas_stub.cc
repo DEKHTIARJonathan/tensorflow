@@ -61,17 +61,14 @@ cublasStatus_t GetSymbolNotFoundError() { return CUBLAS_STATUS_INTERNAL_ERROR; }
 typedef enum {} cublasMath_t;
 #endif
 
-// Parameter constness changed in cuBLAS 9.2
-#if CUDA_VERSION < 9020
+#if CUDA_VERSION < 10000
 #include "tensorflow/stream_executor/cuda/cublas_9_0.inc"
 #elif CUDA_VERSION < 10010
 #include "tensorflow/stream_executor/cuda/cublas_10_0.inc"
-#elif CUDA_VERSION == 10010
+#elif CUDA_VERSION < 10020
 #include "tensorflow/stream_executor/cuda/cublas_10_1.inc"
-#elif CUDA_VERSION == 10020
+#elif CUDA_VERSION < 11000
 #include "tensorflow/stream_executor/cuda/cublas_10_2.inc"
-#elif CUBLAS_VER_MAJOR >= 11
-#include "tensorflow/stream_executor/cuda/cublas_11_0.inc"
 #else
-#error "We have no wrapper for this version."
+#include "tensorflow/stream_executor/cuda/cublas_11_0.inc"
 #endif

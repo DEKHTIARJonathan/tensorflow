@@ -135,7 +135,7 @@ class KernelMappingScheme {
 
   IndexingOrder GetIndexingOrder() const { return indexing_order_; }
   int GetVectorSize() const { return vector_size_; }
-  bool GetRowContiguous() const {return is_row_contiguous_; }
+  bool GetRowContiguous() const { return is_row_contiguous_; }
 
  private:
   // The number of elements in each dimension.

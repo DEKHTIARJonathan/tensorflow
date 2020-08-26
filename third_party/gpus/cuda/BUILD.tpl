@@ -202,12 +202,25 @@ cc_library(
     data = [":cuda-nvvm"],
 )
 
+filegroup(
+    name = "cuda_root",
+    srcs = [
+        "cuda/bin/fatbinary",
+        "cuda/bin/bin2c",
+    ],
+)
+
 bzl_library(
     name = "build_defs_bzl",
     srcs = ["build_defs.bzl"],
     deps = [
         "@bazel_skylib//lib:selects",
     ],
+)
+
+py_library(
+    name = "cuda_config_py",
+    srcs = ["cuda/cuda_config.py"]
 )
 
 %{copy_rules}

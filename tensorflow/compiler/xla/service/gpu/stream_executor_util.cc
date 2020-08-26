@@ -222,7 +222,8 @@ Status ExecuteKernelOnStream(const se::KernelBase& kernel,
 }
 
 se::GpuAsmOpts PtxOptsFromConfig(const HloModuleConfig& hlo_module_config) {
-  string extra_string = hlo_module_config.debug_options().xla_gpu_asm_extra_flags();
+  string extra_string =
+      hlo_module_config.debug_options().xla_gpu_asm_extra_flags();
   std::vector<std::string> extra_flags;
   extra_flags = absl::StrSplit(extra_string, ",", absl::SkipEmpty());
   return se::GpuAsmOpts(

@@ -41,6 +41,9 @@ using gpusparseSpMatDescr_t = cusparseSpMatDescr_t;
 using gpusparseSpMMAlg_t = cusparseSpMMAlg_t;
 #endif
 
+#define GPUSPARSE(postfix) CUSPARSE_##postfix
+#define gpusparse(postfix) cusparse##postfix
+
 #elif TENSORFLOW_USE_ROCM
 
 #include "rocm/include/hipsparse/hipsparse.h"
@@ -51,6 +54,9 @@ using gpusparseMatDescr_t = hipsparseMatDescr_t;
 using gpusparseAction_t = hipsparseAction_t;
 using gpusparseHandle_t = hipsparseHandle_t;
 using gpuStream_t = hipStream_t;
+
+#define GPUSPARSE(postfix) HIPSPARSE_##postfix
+#define gpusparse(postfix) hipsparse##postfix
 
 #endif
 
@@ -196,39 +202,6 @@ class GpuSparse {
   // Wrappers for cuSparse start here.
   //
 
-#if CUDA_VERSION <= 10020
-  // Solves tridiagonal system of equations.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2 routine. gtsv will be
-  // removed in Cuda Toolkit 11.0.
-  // See: https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsv
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status Gtsv(int m, int n, const Scalar *dl, const Scalar *d, const Scalar *du,
-              Scalar *B, int ldb) const;
-
-  // Solves tridiagonal system of equations without pivoting.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2_nopivot routine.
-  // gtsv_nopivot will be removed in Cuda Toolkit 11.0.
-  // See:
-  // https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsv_nopivot
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status GtsvNoPivot(int m, int n, const Scalar *dl, const Scalar *d,
-                     const Scalar *du, Scalar *B, int ldb) const;
-
-  // Solves a batch of tridiagonal systems of equations. Doesn't support
-  // multiple right-hand sides per each system. Doesn't do pivoting.
-  // Note: Cuda Toolkit 9.0+ has better-performing gtsv2StridedBatch routine.
-  // gtsvStridedBatch will be removed in Cuda Toolkit 11.0.
-  // See:
-  // https://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-gtsvstridedbatch
-  // Returns Status::OK() if the kernel was launched successfully.
-  template <typename Scalar>
-  Status GtsvStridedBatch(int m, const Scalar *dl, const Scalar *d,
-                          const Scalar *du, Scalar *x, int batchCount,
-                          int batchStride) const;
-#endif
-
   // Solves tridiagonal system of equations.
   // See: https://docs.nvidia.com/cuda/cusparse/index.html#gtsv2
   template <typename Scalar>
@@ -286,7 +259,7 @@ class GpuSparse {
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-coo2csr.
   Status Coo2csr(const int* cooRowInd, int nnz, int m, int* csrRowPtr) const;
 
-#if CUDA_VERSION < 10020
+#if (GOOGLE_CUDA && (CUDA_VERSION < 10020)) || TENSORFLOW_USE_ROCM
   // Sparse-dense matrix multiplication C = alpha * op(A) * op(B)  + beta * C,
   // where A is a sparse matrix in CSR format, B and C are dense tall
   // matrices.  This routine allows transposition of matrix B, which
@@ -338,7 +311,7 @@ class GpuSparse {
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrmv_mergepath
   //
   // **NOTE** This is an in-place operation for data in y.
-#if CUDA_VERSION < 10020
+#if (GOOGLE_CUDA && (CUDA_VERSION < 10020)) || TENSORFLOW_USE_ROCM
   template <typename Scalar>
   Status Csrmv(gpusparseOperation_t transA, int m, int n, int nnz,
                const Scalar* alpha_host, const gpusparseMatDescr_t descrA,
@@ -393,7 +366,7 @@ class GpuSparse {
                  Scalar* csrSortedValC, int* csrSortedRowPtrC,
                  int* csrSortedColIndC, void* workspace);
 
-#if CUDA_VERSION >= 10000
+#if GOOGLE_CUDA && (CUDA_VERSION >= 10000)
   // Computes sparse-sparse matrix multiplication of matrices
   // stored in CSR format.  This is part zero: calculate required workspace
   // size.
@@ -410,7 +383,7 @@ class GpuSparse {
   // output.  csrSortedRowPtrC must be preallocated on device with
   // m + 1 entries.  See:
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgemm.
-#if CUDA_VERSION < 10000
+#if (GOOGLE_CUDA && (CUDA_VERSION < 10000)) || TENSORFLOW_USE_ROCM
   Status CsrgemmNnz(gpusparseOperation_t transA, gpusparseOperation_t transB,
                     int m, int k, int n, const gpusparseMatDescr_t descrA,
                     int nnzA, const int* csrSortedRowPtrA,
@@ -435,7 +408,7 @@ class GpuSparse {
   // addition.  csrValC and csrColIndC must be allocated on the device
   // with nnzTotalDevHostPtr entries (as calculated by CsrgemmNnz).  See:
   // http://docs.nvidia.com/cuda/cusparse/index.html#cusparse-lt-t-gt-csrgemm.
-#if CUDA_VERSION < 10000
+#if (GOOGLE_CUDA && (CUDA_VERSION < 10000)) || TENSORFLOW_USE_ROCM
   template <typename Scalar>
   Status Csrgemm(gpusparseOperation_t transA, gpusparseOperation_t transB,
                  int m, int k, int n, const gpusparseMatDescr_t descrA,

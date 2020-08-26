@@ -18,8 +18,10 @@ limitations under the License.
 
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 
 namespace stream_executor {
 // Compilation options for compiling ptxas.

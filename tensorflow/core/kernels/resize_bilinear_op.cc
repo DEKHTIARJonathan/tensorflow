@@ -217,6 +217,7 @@ struct ResizeBilinearGrad<CPUDevice, T> {
               static_cast<Eigen::Index>(ceilf(in_x)), original_width - 1);
           const float x_lerp = in_x - floorf(in_x);
           const float inverse_x_lerp = (1.0f - x_lerp);
+          // TODO(b/158287314): Look into vectorizing this.
           for (Eigen::Index c = 0; c < channels; ++c) {
             output_grad(b, top_y_index, left_x_index, c) +=
                 T(input_grad(b, y, x, c) * inverse_y_lerp * inverse_x_lerp);

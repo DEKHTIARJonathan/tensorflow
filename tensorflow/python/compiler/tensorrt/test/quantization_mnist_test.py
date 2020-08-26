@@ -18,10 +18,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+
 import tensorflow_datasets as tfds
 
-from tensorflow.compiler.tf2tensorrt.wrap_py_utils import get_linked_tensorrt_version
-from tensorflow.compiler.tf2tensorrt.wrap_py_utils import is_tensorrt_enabled
+from tensorflow.compiler.tf2tensorrt._pywrap_py_utils import get_linked_tensorrt_version
+from tensorflow.compiler.tf2tensorrt._pywrap_py_utils import is_tensorrt_enabled
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.compiler.tensorrt import trt_convert
 from tensorflow.python.data.ops import dataset_ops

@@ -18,21 +18,17 @@ limitations under the License.
 
 #define EIGEN_USE_GPU
 
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_types.h"
+#include "tensorflow/core/kernels/gpu_prim.h"
 #include "tensorflow/core/kernels/reduction_gpu_kernels.cu.h"
 #include "tensorflow/core/kernels/reduction_ops_common.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-
-#if GOOGLE_CUDA
-namespace gpuprim = ::cub;
-#elif TENSORFLOW_USE_ROCM
-namespace gpuprim = ::hipcub;
-#endif
 
 namespace tensorflow {
 
@@ -113,8 +109,8 @@ __global__ void GenerateNormalizedProb(const T* logits, const U* sum_probs,
 template <>
 __global__ void GenerateNormalizedProb<Eigen::half, float, 8>(
     const Eigen::half* logits, const float* sum_probs,
-    const Eigen::half* max_logits, Eigen::half* output,
-    const int num_rows, const int num_cols, const bool in_log_space) {
+    const Eigen::half* max_logits, Eigen::half* output, const int num_rows,
+    const int num_cols, const bool in_log_space) {
   const int kUnroll = 8;
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   int idx[kUnroll];
@@ -255,26 +251,28 @@ class SoftmaxOpGPU : public OpKernel {
       const int numThreadsPerBlock = 128;
       if (DataTypeToEnum<T>::value == DT_HALF && aligned) {
         const int kUnroll = 8;
-        const int numBlocks = Eigen::divup(rows * cols,
-                                           numThreadsPerBlock * kUnroll);
+        const int numBlocks =
+            Eigen::divup(rows * cols, numThreadsPerBlock * kUnroll);
         TF_CHECK_OK(GpuLaunchKernel(
-          GenerateNormalizedProb<T, acc_type, kUnroll>, numBlocks,
-          numThreadsPerBlock, 0, cu_stream,
-          reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
-          reinterpret_cast<const acc_type*>(sum_probs.flat<acc_type>().data()),
-          reinterpret_cast<const T*>(max_logits.flat<T>().data()),
-          const_cast<T*>(softmax_out->flat<T>().data()), rows, cols, log_));
+            GenerateNormalizedProb<T, acc_type, kUnroll>, numBlocks,
+            numThreadsPerBlock, 0, cu_stream,
+            reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
+            reinterpret_cast<const acc_type*>(
+                sum_probs.flat<acc_type>().data()),
+            reinterpret_cast<const T*>(max_logits.flat<T>().data()),
+            const_cast<T*>(softmax_out->flat<T>().data()), rows, cols, log_));
       } else {
         const int kUnroll = 4;
-        const int numBlocks = Eigen::divup(rows * cols,
-                                           numThreadsPerBlock * kUnroll);
+        const int numBlocks =
+            Eigen::divup(rows * cols, numThreadsPerBlock * kUnroll);
         TF_CHECK_OK(GpuLaunchKernel(
-          GenerateNormalizedProb<T, acc_type, kUnroll>, numBlocks,
-          numThreadsPerBlock, 0, cu_stream,
-          reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
-          reinterpret_cast<const acc_type*>(sum_probs.flat<acc_type>().data()),
-          reinterpret_cast<const T*>(max_logits.flat<T>().data()),
-          const_cast<T*>(softmax_out->flat<T>().data()), rows, cols, log_));
+            GenerateNormalizedProb<T, acc_type, kUnroll>, numBlocks,
+            numThreadsPerBlock, 0, cu_stream,
+            reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
+            reinterpret_cast<const acc_type*>(
+                sum_probs.flat<acc_type>().data()),
+            reinterpret_cast<const T*>(max_logits.flat<T>().data()),
+            const_cast<T*>(softmax_out->flat<T>().data()), rows, cols, log_));
       }
     }
   }
@@ -283,21 +281,20 @@ class SoftmaxOpGPU : public OpKernel {
   bool log_;
 };
 
-REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_GPU).TypeConstraint<Eigen::half>("T"),
-    SoftmaxOpGPU<Eigen::half>);
-REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_GPU).TypeConstraint<float>("T"),
-    SoftmaxOpGPU<float>);
-REGISTER_KERNEL_BUILDER(
-    Name("Softmax").Device(DEVICE_GPU).TypeConstraint<double>("T"),
-    SoftmaxOpGPU<double>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSoftmax").Device(DEVICE_GPU).TypeConstraint<Eigen::half>("T"),
-    SoftmaxOpGPU<Eigen::half>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSoftmax").Device(DEVICE_GPU).TypeConstraint<float>("T"),
-    SoftmaxOpGPU<float>);
+#define REGISTER_GPU(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                       \
+      Name("Softmax").Device(DEVICE_GPU).TypeConstraint<T>("T"), \
+      SoftmaxOpGPU<T>);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU);
+
+#undef REGISTER_GPU
+#define REGISTER_GPU(T)                                             \
+  REGISTER_KERNEL_BUILDER(                                          \
+      Name("LogSoftmax").Device(DEVICE_GPU).TypeConstraint<T>("T"), \
+      SoftmaxOpGPU<T>);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU);
+
+#undef REGISTER_GPU
 
 }  // end namespace tensorflow
 

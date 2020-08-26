@@ -31,9 +31,11 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "tensorflow/compiler/tf2tensorrt/common/utils.h"
 #include "tensorflow/compiler/tf2tensorrt/convert/utils.h"
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_logger.h"
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_shape_optimization_profiles.h"
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/framework/node_def.pb.h"  // NOLINT
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/tensor.pb.h"  // NOLINT
@@ -42,7 +44,6 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph.h"
-#include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/grappler/op_types.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -1214,15 +1215,16 @@ static void InitializeTrtPlugins(nvinfer1::ILogger* trt_logger) {
   nvinfer1::IPluginCreator* const* trt_plugin_creator_list =
       getPluginRegistry()->getPluginCreatorList(&num_trt_plugins);
   if (!trt_plugin_creator_list) {
-    LOG(WARNING) << "Can not find any TensorRT plugins in registry.";
+    LOG_WARNING_WITH_PREFIX << "Can not find any TensorRT plugins in registry.";
   } else {
     VLOG(1) << "Found the following " << num_trt_plugins
             << " TensorRT plugins in registry:";
     for (int i = 0; i < num_trt_plugins; ++i) {
       if (!trt_plugin_creator_list[i]) {
-        LOG(WARNING) << "TensorRT plugin at index " << i
-                     << " is not accessible (null pointer returned by "
-                        "getPluginCreatorList for this plugin)";
+        LOG_WARNING_WITH_PREFIX
+            << "TensorRT plugin at index " << i
+            << " is not accessible (null pointer returned by "
+               "getPluginCreatorList for this plugin)";
       } else {
         VLOG(1) << "  " << trt_plugin_creator_list[i]->getPluginName();
       }
@@ -1827,9 +1829,9 @@ void Converter::MaybeApplyQuantizationRanges() {
       // are tensors which are created internally by TF-TRT. The ranges for
       // these unnamed ITensors are always inferred from user provided ranges,
       // thus there will also be a warning for the range(s) the user missed.
-      LOG(WARNING) << "Quantization range was not found for "
-                   << tensor->getName() << ". "
-                   << "Setting invalid quantization range.";
+      LOG_WARNING_WITH_PREFIX << "Quantization range was not found for "
+                              << tensor->getName() << ". "
+                              << "Setting invalid quantization range.";
       // Set the range to something unusable so the engine will fail if it
       // tries to actually use the tensor's range.
       tensor->setDynamicRange(0, 0);
@@ -4424,8 +4426,13 @@ Status ConvertSquare(OpConverterParams* params) {
   const auto& inputs = params->inputs;
   const auto& node_def = params->node_def;
   TF_RETURN_IF_ERROR(CheckInputsWeights(*params, {{"x", false}}));
+#if IS_TRT_VERSION_GE(6, 0, 1, 0)
+  TF_RETURN_IF_ERROR(AllowDataTypes(
+      *params, {DataType::DT_FLOAT, DataType::DT_HALF, DataType::DT_INT32}));
+#else
   TF_RETURN_IF_ERROR(
       AllowDataTypes(*params, {DataType::DT_FLOAT, DataType::DT_HALF}));
+#endif
   if (params->validation_only) return Status::OK();
 
   // Constant 2 with same rank as input
@@ -4893,10 +4900,11 @@ Status ConvertFusedBatchNorm(OpConverterParams* params) {
     // Trying to use batchnorm in training mode is a very common problem.
     // Because the error message will only be printed in VLOG(1) by the
     // segmenter, we issue a special warning so that users will actually see it.
-    LOG(WARNING) << node_def.op() << " only supports is_training=false. If you "
-                 << "are using Keras, please call "
-                 << "keras.backend.set_learning_phase(0) before constructing "
-                 << "your model. At " << node_def.name();
+    LOG_WARNING_WITH_PREFIX
+        << node_def.op() << " only supports is_training=false. If you "
+        << "are using Keras, please call "
+        << "keras.backend.set_learning_phase(0) before constructing "
+        << "your model. At " << node_def.name();
     return errors::Unimplemented(node_def.op(),
                                  " only supports is_training=false, at ",
                                  node_def.name());
@@ -5666,13 +5674,13 @@ Status ConvertCombinedNMS(OpConverterParams* params) {
   TFAttrs attrs(node_def);
   bool share_location = (boxes_dims.d[1] == 1);
   const bool pad_per_class = attrs.get<bool>("pad_per_class");
-  int top_k;
+  const int top_k = boxes_dims.d[0];
+  int keep_top_k = 0;
   if (pad_per_class) {
-    top_k = std::min(max_size_per_class * num_classes, max_total_size);
+    keep_top_k = std::min(max_size_per_class * num_classes, max_total_size);
   } else {
-    top_k = max_total_size;
+    keep_top_k = max_total_size;
   }
-  const int keep_top_k = top_k;
   float score_thresh = *(static_cast<float*>(score_threshold.GetValues()));
   const int background_id = -1;
   nvinfer1::PluginField fields[8] = {
@@ -5890,9 +5898,9 @@ static void RegisterValidatableOpConverters(
 #endif
 #if IS_TRT_VERSION_GE(5, 1, 0, 0)
 // TODO: @mconley @jdekhtiar - Removed when fixed
-#ifndef TF2TENSORRT_BYPASS_CONVERT_COMBINED_NMS_OPS
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   (*registration)["CombinedNonMaxSuppression"] = ConvertCombinedNMS;
-#endif  // TF2TENSORRT_BYPASS_CONVERT_COMBINED_NMS_OPS
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 #endif
   (*registration)["AddN"] = ConvertAddN;
   (*registration)["Cast"] = ConvertCast;
@@ -5916,11 +5924,11 @@ static void RegisterValidatableOpConverters(
   (*registration)["Conv3D"] = ConvertConv3D;
   (*registration)["Conv3DBackpropInputV2"] = ConvertConv3DBackpropInputV2;
 // TODO: @mconley @jdekhtiar - Removed when fixed
-#ifndef TF2TENSORRT_BYPASS_CONVERT_RESIZE_OPS
+#ifndef TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   for (auto resize_mode : {"ResizeBilinear", "ResizeNearestNeighbor"}) {
     (*registration)[resize_mode] = ConvertResize;
   }
-#endif  // TF2TENSORRT_BYPASS_CONVERT_RESIZE_OPS
+#endif  // TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
   for (auto pool_op_type : {"AvgPool3D", "MaxPool3D"}) {
     (*registration)[pool_op_type] = ConvertPool3D;
   }
@@ -6040,7 +6048,7 @@ Status ConvertGraphDefToEngine(
         const string error_message =
             StrCat("Validation failed for ", node_name, " and input slot ",
                    slot_number, ": ", status.error_message());
-        LOG(WARNING) << error_message;
+        LOG_WARNING_WITH_PREFIX << error_message;
         return Status(status.code(), error_message);
       }
       VLOG(2) << "Adding engine input tensor " << node_name << " with shape "

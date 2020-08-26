@@ -339,6 +339,7 @@ def _find_cublas_config(base_paths, required_version, cuda_version):
       "cublas_library_dir": os.path.dirname(library_path),
   }
 
+
 def _find_cusolver_config(base_paths, required_version, cuda_version):
 
   if (_at_least_version(cuda_version, "11.0") or (_is_aarch64 and _at_least_version(cuda_version, "10.2"))):
@@ -367,6 +368,7 @@ def _find_cusolver_config(base_paths, required_version, cuda_version):
       "cusolver_include_dir": os.path.dirname(header_path),
       "cusolver_library_dir": os.path.dirname(library_path),
   }
+
 
 def _find_curand_config(base_paths, required_version, cuda_version):
 
@@ -397,6 +399,7 @@ def _find_curand_config(base_paths, required_version, cuda_version):
       "curand_library_dir": os.path.dirname(library_path),
   }
 
+
 def _find_cufft_config(base_paths, required_version, cuda_version):
 
   if (_at_least_version(cuda_version, "11.0") or (_is_aarch64 and _at_least_version(cuda_version, "10.2"))):
@@ -404,8 +407,7 @@ def _find_cufft_config(base_paths, required_version, cuda_version):
     def get_header_version(path):
       version = (
           _get_header_version(path, name)
-          for name in ("CUFFT_VER_MAJOR", "CUFFT_VER_MINOR",
-                       "CUFFT_VER_PATCH"))
+          for name in ("CUFFT_VER_MAJOR", "CUFFT_VER_MINOR", "CUFFT_VER_PATCH"))
       return ".".join(version)
 
     header_path, header_version = _find_header(base_paths, "cufft.h",
@@ -559,7 +561,7 @@ def _get_legacy_path(env_name, default=[]):
 
 def _normalize_path(path):
   """Returns normalized path, with forward slashes on Windows."""
-  path = os.path.normpath(path)
+  path = os.path.realpath(path)
   if _is_windows():
     path = path.replace("\\", "/")
   return path
@@ -605,8 +607,7 @@ def find_cuda_config():
     if tuple(int(v) for v in cuda_version.split(".")) < (11, 0):
       cufft_paths = cuda_paths
     cufft_version = os.environ.get("TF_CUFFT_VERSION", "")
-    result.update(
-        _find_cufft_config(cufft_paths, cufft_version, cuda_version))
+    result.update(_find_cufft_config(cufft_paths, cufft_version, cuda_version))
 
     cusparse_paths = base_paths
     if tuple(int(v) for v in cuda_version.split(".")) < (11, 0):

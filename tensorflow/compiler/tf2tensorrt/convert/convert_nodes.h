@@ -38,8 +38,7 @@ limitations under the License.
 #include "third_party/tensorrt/NvInfer.h"
 
 // TODO: @mconley @jdekhtiar - Removed when fixed
-//#define TF2TENSORRT_BYPASS_CONVERT_COMBINED_NMS_OPS
-#define TF2TENSORRT_BYPASS_CONVERT_RESIZE_OPS
+#define TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
 
 namespace tensorflow {
 namespace tensorrt {

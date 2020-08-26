@@ -174,6 +174,7 @@ class VariablesTestCase(test.TestCase, parameterized.TestCase):
                                    "Shapes.*and.*are incompatible"):
         var.assign(np.zeros(shape=[2, 2]))
 
+  @test_util.disable_tfrt("Graph is not supported yet. b/156187905")
   @test_util.disable_xla("XLA doesn't allow changing shape at assignment, as "
                          "dictated by tf2xla/xla_resource.cc:SetTypeAndShape")
   @test_util.run_in_graph_and_eager_modes
@@ -185,6 +186,8 @@ class VariablesTestCase(test.TestCase, parameterized.TestCase):
     self.evaluate(var.assign(np.zeros(shape=[2, 2])))
     self.assertAllEqual(np.zeros(shape=[2, 2]), var.read_value())
 
+  @test_util.disable_tfrt("GetHostSize() is not expected to be called with "
+                          "string type. b/156761465")
   def testZeroSizeStringAssign(self):
     with self.cached_session() as sess:
       array = variables.VariableV1(

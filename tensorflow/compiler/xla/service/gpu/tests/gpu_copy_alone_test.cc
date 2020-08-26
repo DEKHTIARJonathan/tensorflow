@@ -30,14 +30,15 @@ namespace {
 class CopyAloneNoOptTest : public GpuCodegenTest {
   DebugOptions GetDebugOptionsForTest() override {
     DebugOptions debug_options = GpuCodegenTest::GetDebugOptionsForTest();
-    // The test MultiOutputStore contain a MOF fusion and XLA optimizer pass doesn't like this.
+    // The test MultiOutputStore contain a MOF fusion and XLA optimizer pass
+    // doesn't like this.
     debug_options.set_xla_disable_all_hlo_passes(true);
     return debug_options;
   }
 };
 
 TEST_F(CopyAloneNoOptTest, CopyTranspose) {
-    const char* hlo_text = R"(
+  const char* hlo_text = R"(
 HloModule mod
 ENTRY main {
   %param = f32[8,32,32,32,16]{4,3,2,1,0} parameter(0)
@@ -50,10 +51,9 @@ ENTRY main {
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 
   CompileAndOptionallyVerifyPtx(std::move(optimized_module),
-                      R"(
+                                R"(
 CHECK-NOT: ld.global.nc.v2
 )");
-
 }
 
 }  // namespace
