@@ -21,7 +21,7 @@ namespace tensorflow {
 
 // Whether TensorFloat-32 should be used where supported.
 // TODO(nluehr): Maybe enable by default after TF32 Ampere testing.
-static std::atomic<bool> tf32_allowed{false};
+static std::atomic<bool> tf32_allowed{true};
 
 void allow_tf32_execution(bool allowed) { tf32_allowed = allowed; }
 
