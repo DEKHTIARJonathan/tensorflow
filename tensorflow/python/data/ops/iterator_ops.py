@@ -371,7 +371,7 @@ class Iterator(trackable.Trackable):
           raise TypeError("Expected output shapes compatible with %r but got "
                           "dataset with output shapes %r." %
                           (self.output_shapes, dataset_output_shapes))
-    with ops.colocate_with(self._iterator_resource):
+    with ops.device(dataset._variant_tensor.device):
       return gen_dataset_ops.make_iterator(
           dataset._variant_tensor, self._iterator_resource, name=name)  # pylint: disable=protected-access
 
@@ -423,22 +423,25 @@ class Iterator(trackable.Trackable):
     if self._get_next_call_count > GET_NEXT_CALL_WARNING_THRESHOLD:
       warnings.warn(GET_NEXT_CALL_WARNING_MESSAGE)
 
-    # pylint: disable=protected-access
-    flat_ret = gen_dataset_ops.iterator_get_next(
-        self._iterator_resource,
-        output_types=self._flat_tensor_types,
-        output_shapes=self._flat_tensor_shapes,
-        name=name)
-    return structure.from_tensor_list(self._element_spec, flat_ret)
+    with ops.device(self._iterator_resource.device):
+      # pylint: disable=protected-access
+      flat_ret = gen_dataset_ops.iterator_get_next(
+          self._iterator_resource,
+          output_types=self._flat_tensor_types,
+          output_shapes=self._flat_tensor_shapes,
+          name=name)
+      return structure.from_tensor_list(self._element_spec, flat_ret)
 
   def get_next_as_optional(self):
-    # pylint: disable=protected-access
-    return optional_ops._OptionalImpl(
-        gen_dataset_ops.iterator_get_next_as_optional(
-            self._iterator_resource,
-            output_types=structure.get_flat_tensor_types(self.element_spec),
-            output_shapes=structure.get_flat_tensor_shapes(
-                self.element_spec)), self.element_spec)
+
+    with ops.device(self._iterator_resource.device):
+      # pylint: disable=protected-access
+      return optional_ops._OptionalImpl(
+          gen_dataset_ops.iterator_get_next_as_optional(
+              self._iterator_resource,
+              output_types=structure.get_flat_tensor_types(self.element_spec),
+              output_shapes=structure.get_flat_tensor_shapes(
+                  self.element_spec)), self.element_spec)
 
   def string_handle(self, name=None):
     """Returns a string-valued `tf.Tensor` that represents this iterator.
@@ -716,7 +719,7 @@ class OwnedIterator(IteratorBase):
         self._element_spec)
     self._flat_output_shapes = structure.get_flat_tensor_shapes(
         self._element_spec)
-    with ops.colocate_with(ds_variant):
+    with ops.device(ds_variant.device):
       self._iterator_resource, self._deleter = (
           gen_dataset_ops.anonymous_iterator_v2(
               output_types=self._flat_output_types,
@@ -824,13 +827,15 @@ class OwnedIterator(IteratorBase):
     return self._next_internal()
 
   def get_next_as_optional(self):
-    # pylint: disable=protected-access
-    return optional_ops._OptionalImpl(
-        gen_dataset_ops.iterator_get_next_as_optional(
-            self._iterator_resource,
-            output_types=structure.get_flat_tensor_types(self.element_spec),
-            output_shapes=structure.get_flat_tensor_shapes(
-                self.element_spec)), self.element_spec)
+
+    with ops.device(self._iterator_resource.device):
+      # pylint: disable=protected-access
+      return optional_ops._OptionalImpl(
+          gen_dataset_ops.iterator_get_next_as_optional(
+              self._iterator_resource,
+              output_types=structure.get_flat_tensor_types(self.element_spec),
+              output_shapes=structure.get_flat_tensor_shapes(
+                  self.element_spec)), self.element_spec)
 
   def _gather_saveables_for_checkpoint(self):
 
@@ -947,9 +952,10 @@ def get_next_as_optional(iterator):
     of the iterator (if it exists) or no value.
   """
   # pylint: disable=protected-access
-  return optional_ops._OptionalImpl(
-      gen_dataset_ops.iterator_get_next_as_optional(
-          iterator._iterator_resource,
-          output_types=structure.get_flat_tensor_types(iterator.element_spec),
-          output_shapes=structure.get_flat_tensor_shapes(
-              iterator.element_spec)), iterator.element_spec)
+  with ops.device(iterator._iterator_resource.device):
+    return optional_ops._OptionalImpl(
+        gen_dataset_ops.iterator_get_next_as_optional(
+            iterator._iterator_resource,
+            output_types=structure.get_flat_tensor_types(iterator.element_spec),
+            output_shapes=structure.get_flat_tensor_shapes(
+                iterator.element_spec)), iterator.element_spec)
