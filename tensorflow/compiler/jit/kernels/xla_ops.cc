@@ -356,7 +356,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
     OP_REQUIRES_OK(ctx, LockVariables(absl::MakeSpan(variable_infos)));
     Status s = CompileToLocalExecutable(
         ctx, function_, /*has_ref_vars=*/has_ref_vars_, platform_info_,
-        variable_infos, constants_, /*lazy=*/false, /*async=*/false, &client,
+        variable_infos, constants_, /*async=*/false, /*lazy=*/false, &client,
         &compilation_result, &executable);
     OP_REQUIRES_OK(ctx, s);
     OP_REQUIRES_OK(ctx, SnapshotResourceVariables(ctx, resources_,
@@ -524,8 +524,7 @@ void XlaCompileOp::Compute(OpKernelContext* ctx) {
     OP_REQUIRES_OK(ctx, LockVariables(absl::MakeSpan(variable_infos)));
     Status status = CompileToLocalExecutable(
         ctx, function_, has_ref_vars_, platform_info_, variable_infos,
-        constants_,
-        async, /*lazy=*/!must_compile_, &client, &kernel, &executable);
+        constants_, async, lazy, &client, &kernel, &executable);
     OP_REQUIRES_OK(ctx, SnapshotResourceVariables(ctx, resources_,
                                                   variable_infos, &variables));
     if (must_compile_ || async || status.code() != error::UNIMPLEMENTED) {
