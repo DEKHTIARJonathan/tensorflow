@@ -3747,8 +3747,7 @@ Status IrEmitterUnnested::EmitReductionFromOrToContiguousDimensions(
 
   thunks.push_back(std::move(kernel_thunk));
   std::unique_ptr<SequentialThunk> sequential_thunk =
-      absl::make_unique<SequentialThunk>(GetThunkInfo(unnested_hlo),
-                                         std::move(thunks));
+      absl::make_unique<SequentialThunk>(std::move(thunks), unnested_hlo);
   AddThunkToThunkSequence(std::move(sequential_thunk));
 
   return Status::OK();

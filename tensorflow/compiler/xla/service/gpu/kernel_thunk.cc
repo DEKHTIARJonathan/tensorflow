@@ -116,7 +116,7 @@ Status KernelThunk::ExecuteOnStream(const ExecuteParams& params) {
   }
 
   auto op_profiler =
-      params.profiler->MakeScopedInstructionProfiler(profile_index());
+      params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
   return ExecuteKernelOnStream(*kernel, buffer_args, launch_dimensions,
                                params.stream);
 }
