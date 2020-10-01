@@ -37,6 +37,7 @@ docker build -t renode_bluepill \
 exit_code=0
 # running in `if` to avoid setting +e
 if ! docker run \
+  --init \
   --log-driver=none -a stdout -a stderr \
   -v ${ROOT_DIR}:/workspace \
   -v /tmp:/tmp \

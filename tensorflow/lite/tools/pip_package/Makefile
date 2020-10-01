@@ -30,7 +30,7 @@ docker-image:
 	docker build -t $(TAG_IMAGE) --build-arg IMAGE=$(BASE_IMAGE) .
 
 docker-shell: docker-image
-	docker run --rm --interactive --tty \
+	docker run --init --rm --interactive --tty \
 		--volume $(TENSORFLOW_DIR):/tensorflow \
 		--workdir /tensorflow \
 		$(TAG_IMAGE)
