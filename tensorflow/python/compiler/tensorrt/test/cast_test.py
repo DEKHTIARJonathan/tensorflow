@@ -28,29 +28,65 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
 
 
-class CastInt32ToFp32Test(trt_test.TfTrtIntegrationTestBase):
-  """Tests cast to FP32 are splitted in FP16 mode."""
+class CastFp32Fp16Test(trt_test.TfTrtIntegrationTestBase):
+  """Tests cast to back and forth between FP16 and FP32."""
 
-  def _ConstOp(self, shape, dtype):
-    return constant_op.constant(np.random.randn(*shape), dtype=dtype)
+  def GraphFn(self, net):
 
-  def GraphFn(self, x):
-    b_f = self._ConstOp((1, 10), dtypes.float32)
-    x_f = math_ops.cast(x, dtypes.float32)
-    x_f = math_ops.mul(x_f, b_f)
-    b_f = self._ConstOp((1, 10), dtypes.float32)
-    x_f = math_ops.add(x_f, b_f)
-    return array_ops.identity(x_f, name="output_0")
+    # Convert FP16 => FP32
+    net = math_ops.cast(net, dtypes.float32, name="cast_fp16_to_fp32")
+    net = math_ops.mul(net, net, name="mul_fp32_1")
+    net = math_ops.mul(net, net, name="mul_fp32_2")
+    # Convert FP32 => FP16
+    net = math_ops.cast(net, dtypes.float16, name="cast_fp32_to_fp16")
+    net = math_ops.add(net, net, name="add_fp16_1")
+    net = math_ops.add(net, net, name="add_fp16_2")
+    # Convert FP16 => FP32
+    net = math_ops.cast(net, dtypes.float32, name="cast_fp16_to_fp32")
+    net = math_ops.mul(net, net, name="add_fp32_1")
+    net = math_ops.mul(net, net, name="add_fp32_2")
+    # Convert FP16 => FP32
+    net = math_ops.cast(net, dtypes.float32, name="cast_fp32_to_fp32")
+
+    return array_ops.identity(net, name="output_0")
 
   def GetParams(self):
-    return self.BuildParams(self.GraphFn, dtypes.int32, [[1, 10]], [[1, 10]])
+    return self.BuildParams(self.GraphFn, dtypes.float16, [[1, 10]], [[1, 10]])
 
   def ExpectedEnginesToBuild(self, run_params):
     """Returns the expected engines to build."""
-    if run_params.precision_mode == "FP16":
-      return {"TRTEngineOp_0": ["Cast", "Add", "Mul"]}
+    if run_params.precision_mode != "FP32":
+      return {
+        "TRTEngineOp_0": [
+          "cast_fp16_to_fp32", "mul_fp32_1", "mul_fp32_2",
+          "cast_fp32_to_fp16", "add_fp16_1", "add_fp16_2",
+          "cast_fp16_to_fp32", "add_fp32_1", "add_fp32_2",
+          "cast_fp32_to_fp32"  # This OP is removed anyway by the grappler
+        ]
+      }
     else:
-      return {"TRTEngineOp_0": ["Add", "Mul"]}
+      return {
+        "TRTEngineOp_0": ["mul_fp32_1", "mul_fp32_2"],
+        "TRTEngineOp_1": ["add_fp16_1", "add_fp16_2"],
+        "TRTEngineOp_2": ["add_fp32_1", "add_fp32_2"]
+      }
+
+  def GetConversionParams(self, run_params):
+    """Returns a TrtConversionParams for test."""
+    conversion_params = super(CastFp32Fp16Test, self).GetConversionParams(
+      run_params
+    )
+    conversion_params = conversion_params._replace(minimum_segment_size=2)
+    # raise Exception(conversion_params)
+    return conversion_params
+
+  def ShouldRunTest(self, run_params):
+    should_run, reason = super().ShouldRunTest(run_params)
+    # Only run for TRT 7.0.0 and above.
+    return should_run and \
+           trt_test.IsTensorRTVersionGreaterEqual(7), \
+           reason + ' and TRT Version >= 7.0.0'
+
 
 if __name__ == "__main__":
   test.main()

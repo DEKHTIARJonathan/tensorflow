@@ -732,6 +732,18 @@ Status ConvertAfterShapes(const ConversionParams& params) {
     segment_options.exclude_node_list.insert(node);
   }
   segment_options.minimum_segment_size = params.minimum_segment_size;
+
+  // We allow the segmenter to include or exclude a node based on the precision
+  // of the TRT engine we will build. We only know the precision of the TRT
+  // engine when calibration is not used. When calibration is used, we may build
+  // a FP32 engine or a INT8 engine for the same segment.
+  if (params.precision_mode == TrtPrecisionMode::INT8 &&
+      params.use_calibration) {
+    segment_options.precision_mode = TrtPrecisionMode::NOT_AVAILABLE;
+  }
+  else {
+    segment_options.precision_mode = params.precision_mode;
+  }
   segment_options.use_implicit_batch = params.use_implicit_batch;
   if (segment_options.use_implicit_batch)
     segment_options.maximum_batch_size = params.max_batch_size;
