@@ -1647,7 +1647,7 @@ Status Converter::BuildCudaEngine(
   else
   {
     // default path when we are not forcing trt algorithm selection
-    LOG(1) << "Algorithm selector to disable flaky tactics";
+    LOG(INFO) << "Algorithm selector to disable flaky tactics";
     FlakyAlgorithmRejector trt_flaky_algorithm_rejector;
     builder_config->setAlgorithmSelector(&trt_flaky_algorithm_rejector);
   }
