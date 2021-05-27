@@ -1535,6 +1535,79 @@ class StaticAlgorithmSelector : public nvinfer1::IAlgorithmSelector {
                         const nvinfer1::IAlgorithm* const* algoChoices,
                         int32_t nbAlgorithms) override {}  // do nothing
 };
+
+enum class Tactic : int64_t
+{
+    kINVALID_TACTIC = int64_t(0xD15EA5EDD15EA5ED)
+};
+
+enum class LayerImpl : int64_t
+{
+    kSHUFFLE = 16,
+};
+
+class FlakyAlgorithmRejector : public nvinfer1::IAlgorithmSelector {
+ public:
+  FlakyAlgorithmRejector()
+  {
+    LOG(INFO) << "FlakyAlgorithmRejector constructed";
+  }
+
+  // Returns value in [0, nbChoices] for a valid algorithm.
+  int32_t selectAlgorithms(const nvinfer1::IAlgorithmContext& algoContext,
+                           const nvinfer1::IAlgorithm* const* algoChoices,
+                           int32_t nbChoices, int32_t* selection) override {
+
+    LOG(INFO) << "FlakyAlgorithmRejector::selectAlgorithm with choices" << nbChoices;
+    // TensorRT always provides more than zero number of algorithms
+    // in selectAlgorithms.
+    assert(nbChoices > 0);
+
+    // Disable bad known tactics
+    int32_t nbSelections = 0;
+    for (auto i = 0; i < nbChoices; i++)
+    {
+        bool algoMatch = true;
+        if (algoChoices[i] == nullptr)
+        {
+            continue;
+        }
+        assert(algoChoices[i]->getAlgorithmVariant().getTactic()
+            != static_cast<int64_t>(Tactic::kINVALID_TACTIC));
+
+        if ((algoChoices[i]->getAlgorithmVariant().getImplementation() == static_cast<int64_t>(LayerImpl::kSHUFFLE))
+        && (algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat() == nvinfer1::TensorFormat::kCHW32))
+        {
+          // rejecting nc32hw32 --> shuffle node --> 
+          LOG(INFO) << "Rejecting flaky tactic for node " << algoContext.getName() << " with implementation " <<
+          algoChoices[i]->getAlgorithmVariant().getImplementation() << " and input format " << static_cast<int32_t>(algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat());
+          algoMatch = false;
+        }
+        else
+        {
+          LOG(INFO) << "Accepting a good tactic for node " << algoContext.getName() << " with implementation " <<
+          algoChoices[i]->getAlgorithmVariant().getImplementation() << " and input format " << static_cast<int32_t>(algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat());
+          algoMatch = true;
+        }
+
+        if (algoMatch)
+        {
+            LOG(INFO) << "nbSelections: " << nbSelections;
+            selection[nbSelections++] = i;
+        }
+    }
+
+    return nbSelections;
+  }
+
+  // Called by TensorRT to report choices it made.
+  void reportAlgorithms(const nvinfer1::IAlgorithmContext* const* algoContexts,
+                        const nvinfer1::IAlgorithm* const* algoChoices,
+                        int32_t nbAlgorithms) override
+  {
+    LOG(INFO) << "reportAlgorithms...does nothing";
+  }
+};
 #endif
 
 Status Converter::BuildCudaEngine(
@@ -1570,6 +1643,13 @@ Status Converter::BuildCudaEngine(
     VLOG(1) << "Forcing TRT algorithm selection to: ID=" << trt_algorithm_id;
     StaticAlgorithmSelector trt_algorithm_selector(trt_algorithm_id);
     builder_config->setAlgorithmSelector(&trt_algorithm_selector);
+  }
+  else
+  {
+    // default path when we are not forcing trt algorithm selection
+    LOG(1) << "Algorithm selector to disable flaky tactics";
+    FlakyAlgorithmRejector trt_flaky_algorithm_rejector;
+    builder_config->setAlgorithmSelector(&trt_flaky_algorithm_rejector);
   }
 #endif
 
