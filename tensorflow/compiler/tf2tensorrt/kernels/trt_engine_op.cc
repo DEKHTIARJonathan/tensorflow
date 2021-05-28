@@ -194,6 +194,7 @@ class TRTEngineOp : public AsyncOpKernel {
   StatusOr<TrtUniquePtrType<nvinfer1::ICudaEngine>> BuildEngine(
       const std::vector<TensorShape>& input_concrete_shapes, int batch_size,
       bool use_calibration, TRTInt8Calibrator* calibrator,
+      nvinfer1::IAlgorithmSelector* algorithm_selector,
       TRTEngineCacheResource* cache_resource);
 
   // Verify that the input shapes are consistent and can be handled by this op.
@@ -250,6 +251,8 @@ class TRTEngineOp : public AsyncOpKernel {
 
   // The finalized calibrator for inference.
   std::unique_ptr<TRTInt8Calibrator> calibrator_;
+
+  std::unique_ptr<FlakyAlgorithmRejector> algorithm_selector;
 
   // If true, create calibration graph for INT8 mode. Otherwise, we are using
   // user-provided quantization ranges.
@@ -437,6 +440,7 @@ TRTEngineOp::TRTEngineOp(OpKernelConstruction* context)
     calibrator_.reset(new TRTInt8Calibrator(calibration_data));
     calibration_data.resize(0);
   }
+  algorithm_selector_.reset(nullptr);
   OP_REQUIRES_OK(context, context->GetAttr("max_cached_engines_count",
                                            &max_cached_engines_));
 
@@ -922,7 +926,7 @@ Status TRTEngineOp::GetEngineCacheResource(OpKernelContext* ctx,
 
 StatusOr<TrtUniquePtrType<nvinfer1::ICudaEngine>> TRTEngineOp::BuildEngine(
     const std::vector<TensorShape>& input_concrete_shapes, int batch_size,
-    bool use_calibration, TRTInt8Calibrator* calibrator,
+    bool use_calibration, TRTInt8Calibrator* calibrator, nvinfer1::IAlgorithmSelector* algorithm_selector,
     TRTEngineCacheResource* cache_resource) {
   // Use concrete shapes for implicit batch mode and partial shapes for
   // explicit batch mode.
@@ -941,7 +945,7 @@ StatusOr<TrtUniquePtrType<nvinfer1::ICudaEngine>> TRTEngineOp::BuildEngine(
   auto status = convert::ConvertGraphDefToEngine(
       segment_graph_def_, precision_mode_, batch_size, workspace_size_,
       conversion_input_shapes, &logger, cache_resource->allocator_.get(),
-      calibrator, &engine, use_calibration, use_implicit_batch_, nullptr,
+      calibrator, algorithm_selector, &engine, use_calibration, use_implicit_batch_, nullptr,
       &cache_resource->profiles_, name());
   if (!status.ok()) {
     LOG_FIRST_FEW_WARNING_WITH_PREFIX
@@ -1082,7 +1086,7 @@ StatusOr<std::pair<EngineContext*, int>> TRTEngineOp::GetEngine(
     // Up to this point, calibrator_ can never be empty, since otherwise it
     // means calibration_mode_ is true and this path won't get executed.
     auto result = BuildEngine(input_concrete_shapes, batch_size,
-                              use_calibration_, calibrator_.get(), cache_res);
+                              use_calibration_, calibrator_.get(), algorithm_selector.get(), cache_res);
     if (!result.ok()) {
       return std::pair<EngineContext*, int>(&empty_context, 0);
     }

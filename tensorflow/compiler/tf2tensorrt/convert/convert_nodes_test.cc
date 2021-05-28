@@ -1263,6 +1263,71 @@ TEST_F(ConverterTest, CreateConstantLayer) {
   VerifyTrtLayerNameNotEmpty(converter_->network());
 }
 
+enum class Tactic : int64_t
+{
+    kINVALID_TACTIC = int64_t(0xD15EA5EDD15EA5ED)
+};
+
+enum class LayerImpl : int64_t
+{
+    kSHUFFLE = 16,
+};
+
+class FlakyAlgorithmRejector : public nvinfer1::IAlgorithmSelector {
+ public:
+  FlakyAlgorithmRejector() = default;
+  ~FlakyAlgorithmRejector() = default;
+
+  // Returns value in [0, nbChoices] for a valid algorithm.
+  int32_t selectAlgorithms(const nvinfer1::IAlgorithmContext& algoContext,
+                           const nvinfer1::IAlgorithm* const* algoChoices,
+                           int32_t nbChoices, int32_t* selection) override {
+
+    // TensorRT always provides more than zero number of algorithms
+    // in selectAlgorithms.
+    assert(nbChoices > 0);
+
+    // Disable bad known tactics
+    int32_t nbSelections = 0;
+    for (auto i = 0; i < nbChoices; i++)
+    {
+        bool algoMatch = true;
+        if (algoChoices[i] == nullptr)
+        {
+            continue;
+        }
+        assert(algoChoices[i]->getAlgorithmVariant().getTactic()
+            != static_cast<int64_t>(Tactic::kINVALID_TACTIC));
+
+        if ((algoChoices[i]->getAlgorithmVariant().getImplementation() == static_cast<int64_t>(LayerImpl::kSHUFFLE))
+        && (algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat() == nvinfer1::TensorFormat::kCHW32))
+        {
+          LOG(INFO) << "Rejecting flaky tactic for node " << algoContext.getName() << " with implementation " <<
+          algoChoices[i]->getAlgorithmVariant().getImplementation() << " and input format " << static_cast<int32_t>(algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat());
+          algoMatch = false;
+        }
+        else
+        {
+          LOG(INFO) << "Accepting a good tactic for node " << algoContext.getName() << " with implementation " <<
+          algoChoices[i]->getAlgorithmVariant().getImplementation() << " and input format " << static_cast<int32_t>(algoChoices[i]->getAlgorithmIOInfo(0).getTensorFormat());
+          algoMatch = true;
+        }
+
+        if (algoMatch)
+        {
+            selection[nbSelections++] = i;
+        }
+    }
+
+    return nbSelections;
+  }
+
+  // Called by TensorRT to report choices it made.
+  void reportAlgorithms(const nvinfer1::IAlgorithmContext* const* algoContexts,
+                        const nvinfer1::IAlgorithm* const* algoChoices,
+                        int32_t nbAlgorithms) override {}
+};
+
 class ConvertGraphDefToEngineTest : public ::testing::Test {
  public:
   Status RunConvertGraphDefToEngine(Scope* s) {
@@ -1289,7 +1354,7 @@ class ConvertGraphDefToEngineTest : public ::testing::Test {
     return ConvertGraphDefToEngine(
         gdef, TrtPrecisionMode::FP32, /*max_batch_size=*/1,
         /*max_workspace_size_bytes=*/64 << 20, input_shapes, &logger_,
-        /*allocator=*/nullptr, /*calibrator=*/nullptr, &engine_,
+        /*allocator=*/nullptr, /*calibrator=*/nullptr, /*flaky*/nullptr, &engine_,
         /*use_calibration=*/false, /*use_implicit_batch=*/true,
         /*convert_successfully=*/nullptr, /*profiles=*/nullptr,
         "TRTEngineOp_0_0");
@@ -1498,12 +1563,15 @@ class OpConverterTest : public ::testing::Test {
       profiles.InitProfiles(input_partial_shapes,
                             ProfileStrategy::kImplicitBatchModeCompatible);
     }
+    
+    std::unique_ptr<nvinfer1::IAlgorithmSelector> algo_rejector_(new FlakyAlgorithmRejector());
     TF_RETURN_IF_ERROR(
         converter_->BuildCudaEngine(&engine_,
                                     /*max_batch_size=*/batch_size,
                                     /*max_workspace_size_bytes=*/1 << 26,
                                     /*allocator=*/nullptr,
                                     /*calibrator=*/nullptr,
+                                    /*alorithm_selector=*/algo_rejector_.get(),
                                     /*profiles=*/&profiles));
     CHECK_NOTNULL(engine_.get());
     CheckDataTypeMatches(input_data);

@@ -455,7 +455,7 @@ Status CreateTRTNode(const ConversionParams& params,
         info.segment_graph_def,
         calibrate_int8 ? TrtPrecisionMode::FP32 : info.precision_mode,
         max_batch_size, info.max_workspace_size_bytes, input_shapes, trt_logger,
-        trt_allocator.get(), /*calibrator=*/nullptr, &engine,
+        trt_allocator.get(), /*calibrator=*/nullptr, /*alorithm_selector=*/nullptr, &engine,
         info.use_calibration, params.use_implicit_batch,
         /*convert_successfully=*/nullptr,
         /*profile=*/nullptr, info.engine_name));
