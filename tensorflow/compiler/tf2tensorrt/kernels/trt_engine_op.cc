@@ -97,7 +97,9 @@ class ContextDeviceMemory {
             "Out of GPU memory for execution context");
       }
     }
-    execution_context_->setDeviceMemory(device_memory_);
+    if (device_memory_) {
+      execution_context_->setDeviceMemory(device_memory_);
+    }
 
     return Status::OK();
   }
