@@ -66,10 +66,6 @@ gen_trt_ops = LazyLoader(
     "gen_trt_ops", globals(),
     "tensorflow.compiler.tf2tensorrt.ops.gen_trt_ops")
 
-_pywrap_py_utils = LazyLoader(
-    "_pywrap_py_utils", globals(),
-    "tensorflow.compiler.tf2tensorrt._pywrap_py_utils")
-
 # Register TRT ops in python, so that when users import this module they can
 # execute a TRT-converted graph without calling any of the methods in this
 # module.
@@ -204,46 +200,6 @@ def _check_conversion_params(conversion_params, is_v2=False):
       conversion_params.minimum_segment_size != -1):
     raise ValueError("minimum segment size should be positive or -1 "
                      "(to disable main graph conversion).")
-
-
-def _check_trt_version_compatibility():
-  """Check compatibility of TensorRT version.
-
-  Raises:
-    RuntimeError: if the TensorRT library version is incompatible.
-  """
-  linked_version = _pywrap_py_utils.get_linked_tensorrt_version()
-  loaded_version = _pywrap_py_utils.get_loaded_tensorrt_version()
-  assert isinstance(linked_version, tuple)
-  assert isinstance(loaded_version, tuple)
-  assert len(linked_version) == 3
-  assert len(loaded_version) == 3
-  tf_logging.info("Linked TensorRT version: %s" % str(linked_version))
-  tf_logging.info("Loaded TensorRT version: %s" % str(loaded_version))
-  if loaded_version < linked_version:
-    tf_logging.error(
-        "Loaded TensorRT %s but linked TensorFlow against TensorRT %s. " %
-        (".".join(str(x) for x in loaded_version), ".".join(
-            str(x) for x in linked_version)) +
-        "TensorRT does not support forward compatibility. " +
-        "It is also required to use the same major version of TensorRT " +
-        "during compilation and runtime.")
-    raise RuntimeError("Incompatible TensorRT versions")
-  if loaded_version[0] > linked_version[0]:
-    tf_logging.error(
-        "Loaded TensorRT %s but linked TensorFlow against TensorRT %s. " %
-        (".".join(str(x) for x in loaded_version), ".".join(
-            str(x) for x in linked_version)) +
-        "It is required to use the same major version " +
-        "of TensorRT during compilation and runtime.")
-    raise RuntimeError("Incompatible TensorRT major version")
-  if loaded_version != linked_version:
-    tf_logging.info(
-        "Loaded TensorRT %s and linked TensorFlow against TensorRT %s. " %
-        (".".join(str(x) for x in loaded_version), ".".join(
-            str(x) for x in linked_version)) +
-        "This is supported because TensorRT " +
-        " minor/patch upgrades are backward compatible")
 
 
 def _get_tensorrt_rewriter_config(conversion_params,
@@ -454,7 +410,6 @@ class TrtGraphConverter(object):
     if not input_graph_def and not input_saved_model_dir:
       raise ValueError("Must specify one of input_graph_def and "
                        "input_saved_model_dir")
-    _check_trt_version_compatibility()
 
     self._input_graph_def = input_graph_def
     self._nodes_denylist = nodes_denylist
@@ -882,8 +837,6 @@ class TrtGraphConverterV2(object):
 
      # Define a generator function that yields input data, and use it to execute
      # the graph to build TRT engines.
-     # With TensorRT 5.1, different engines will be built (and saved later) for
-     # different input shapes to the TRTEngineOp.
      def my_input_fn():
        for _ in range(num_runs):
          inp1, inp2 = ...
@@ -988,7 +941,6 @@ class TrtGraphConverterV2(object):
     if conversion_params is None:
       conversion_params = TrtConversionParams()
 
-    _check_trt_version_compatibility()
     _check_conversion_params(conversion_params, is_v2=True)
 
     self._conversion_params = conversion_params
