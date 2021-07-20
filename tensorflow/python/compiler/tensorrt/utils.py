@@ -50,22 +50,26 @@ def disable_non_trt_optimizers_in_rewriter_config(rewriter_config):
   rewriter_config.shape_optimization = off
 
 
-def _IsTensorRTVersionGreaterEqual(trt_ver, major, minor=0, patch=0):
-  assert isinstance(trt_ver, tuple)
-  assert len(trt_ver) == 3
+def versionTupleToString(ver_tuple):
+  assert isinstance(ver_tuple, tuple)
+  assert len(ver_tuple) == 3
 
-  trt_ver = [str(x) for x in trt_ver]
-  trt_ver = version.LooseVersion(".".join(trt_ver))
-  target_ver = version.LooseVersion("{}.{}.{}".format(major, minor, patch))
+  ver_tuple = [str(x) for x in ver_tuple]
+  return ".".join(ver_tuple)
+
+
+def _IsTensorRTVersionGreaterEqual(trt_ver, target_ver):
+  trt_ver = version.LooseVersion(versionTupleToString(trt_ver))
+  target_ver = version.LooseVersion(versionTupleToString(target_ver))
 
   return trt_ver >= target_ver
 
 
 def IsLinkedTensorRTVersionGreaterEqual(major, minor=0, patch=0):
   ver = _pywrap_py_utils.get_linked_tensorrt_version()
-  return _IsTensorRTVersionGreaterEqual(ver, major, minor, patch)
+  return _IsTensorRTVersionGreaterEqual(ver, (major, minor, patch))
 
 
 def IsLoadedTensorRTVersionGreaterEqual(major, minor=0, patch=0):
   ver = _pywrap_py_utils.get_loaded_tensorrt_version()
-  return _IsTensorRTVersionGreaterEqual(ver, major, minor, patch)
+  return _IsTensorRTVersionGreaterEqual(ver, (major, minor, patch))
